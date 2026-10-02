@@ -276,8 +276,19 @@ fun UpdatePromptHost(
                         // в этом случае бессмысленно — сначала разрешение.
                         Button(
                             onClick = {
-                                closeDialog()
-                                ctx.startActivity(UpdateChecker.unknownSourcesSettings(ctx))
+                                // Настройка «Установка неизвестных приложений»
+                                // есть не во всех прошивках и не во всех версиях
+                                // Android. Если Activity нет, показываем ошибку в
+                                // диалоге, вместо того чтобы уронить приложение.
+                                val opened = runCatching {
+                                    ctx.startActivity(UpdateChecker.unknownSourcesSettings(ctx))
+                                }.isSuccess
+                                if (opened) {
+                                    closeDialog()
+                                } else {
+                                    errorText = "Настройка установки недоступна на этом устройстве"
+                                    stage = UpdateStage.ERROR
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MIET_BLUE),
                         ) {
@@ -292,8 +303,19 @@ fun UpdatePromptHost(
                                     runCatching {
                                         UpdateChecker.downloadApk(ctx, info)
                                     }.onSuccess { apk ->
-                                        ctx.startActivity(UpdateChecker.installIntent(ctx, apk))
-                                        closeDialog()
+                                        // Установщик на этом устройстве может быть
+                                        // отключён или отсутствовать (например на
+                                        // части прошивок без PackageInstaller).
+                                        // Без защиты startActivity падал бы с
+                                        // ActivityNotFoundException прямо из
+                                        // обработчика результата.
+                                        runCatching {
+                                            ctx.startActivity(UpdateChecker.installIntent(ctx, apk))
+                                            closeDialog()
+                                        }.onFailure {
+                                            errorText = "Не найдено приложение для установки"
+                                            stage = UpdateStage.ERROR
+                                        }
                                     }.onFailure { e ->
                                         errorText = e.message ?: "Неизвестная ошибка"
                                         stage = UpdateStage.ERROR
