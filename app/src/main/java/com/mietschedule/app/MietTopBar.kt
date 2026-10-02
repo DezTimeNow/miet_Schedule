@@ -2,6 +2,7 @@ package com.mietschedule.app
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,8 +23,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 
 /**
  * Ширина, которую занимает стрелка «‹» в шапке.
@@ -33,6 +41,13 @@ import androidx.compose.ui.unit.sp
  * Без этого резерва «Роль» и кнопка обновления прыгали бы между экранами.
  */
 private val BACK_SLOT = 48.dp
+
+/**
+ * Сколько dp шапка отдаёт под кнопки справа: звезда + избранное + обновление
+ * + «Роль» (+ их резервы на экранах, где их нет). Заголовок ужимается на эту
+ * величину, иначе он рассчитывается на всю ширину окна и переносится.
+ */
+private const val RESERVED_FOR_ACTIONS = 208
 
 /**
  * ЕДИНАЯ ШАПКА для всех экранов приложения.
@@ -55,6 +70,30 @@ private val BACK_SLOT = 48.dp
  * Звезда присутствует только там, где есть что любить (расписание), но место
  * под неё зарезервировано всегда — иначе она снова сдвинет соседей.
  */
+/**
+ * АДАПТИВНЫЙ КЕГЛЬ. Compose BOM 2024.12.01 не умеет autoSize (появился в
+ * более новых версиях), поэтому размер считаем сами от ширины окна в dp.
+ *
+ * Зачем: на узких экранах заголовок «Расписание МИЭТ» не влезал в шапку
+ * и переносился на вторую строку, наезжая на подзаголовок («АУДИТОРИ Я»).
+ * Ширина берётся у LocalConfiguration/Density, поэтому результат
+ * одинаков при любом разрешении: считаем в dp, а не в пикселях.
+ */
+@Composable
+private fun adaptiveTitleSize(availableDp: Int): TextUnit = when {
+    availableDp < 330 -> 14.sp
+    availableDp < 380 -> 16.sp
+    availableDp < 460 -> 17.sp
+    else -> 18.sp
+}
+
+@Composable
+private fun adaptiveSubtitleSize(availableDp: Int): TextUnit = when {
+    availableDp < 330 -> 10.sp
+    availableDp < 380 -> 11.sp
+    else -> 12.sp
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MietTopBar(
@@ -84,9 +123,37 @@ fun MietTopBar(
             }
         },
         title = {
+            // Шрифты АДАПТИВНЫЕ. На узких экранах (Honor Magic V2 — 1200 px
+            // ширины при density 3) «Расписание МИЭТ» не влезало в одну строку
+            // и переносилось на вторую, а заголовок съезжал на подзаголовок
+            // («АУДИТОРИ / Я»). maxLines = 1 запрещает перенос, а
+            // autoSize ужимает текст под доступную ширину.
             Column {
-                Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(subtitle, color = Color(0xFFBBDEFB), fontSize = 12.sp)
+                val cfg = LocalConfiguration.current
+                val density = LocalDensity.current
+                // Ширина окна в dp: шапка занимает всю ширину минус слоты под
+                // кнопки-действия (звезда/избранное/обновление/роль).
+                val availDp = with(density) { cfg.screenWidthDp } - RESERVED_FOR_ACTIONS
+                val titleSp = adaptiveTitleSize(availDp)
+                val subtitleSp = adaptiveSubtitleSize(availDp)
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = titleSp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = subtitle,
+                    color = Color(0xFFBBDEFB),
+                    fontSize = subtitleSp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         },
         actions = {

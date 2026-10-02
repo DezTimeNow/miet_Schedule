@@ -977,8 +977,12 @@ Role.AUDIENCE -> {
         topBar = {
             MietTopBar(
                 title = group,
-                subtitle = role.title.removePrefix("Я ") + " • " +
-                        (if (semestr.isBlank()) "Загрузка…" else semestr),
+                // П.5. Роль («Студент»/«Преподаватель»/«Аудитория») из подписи
+                // убрана: её и так показывает галочка и цвет в списке ролей,
+                // а на главной она была вторым упоминанием того же самого
+                // прямо над собой. Осталось только семестр — он своё
+                // обозначение не дублирует.
+                subtitle = if (semestr.isBlank()) "Загрузка…" else semestr,
                 onRefresh = onRefreshAll,
                 onChangeRole = onChangeRole,
                 refreshing = refreshing,
@@ -1154,7 +1158,15 @@ Role.AUDIENCE -> {
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                     )
                     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-                        shown.forEach { (day, dayLessons) ->
+                        // П.2. Дни БЕЗ ПАР пропускаем целиком — вместе с их
+                        // заголовком. Раньше здесь рисовался заголовок дня
+                        // «пятница 02.10.2026» даже там, где пар нет, и на
+                        // сдвинутой неделе он оставался в синей рамке с
+                        // подписью «— сегодня»: то есть приложение указывало
+                        // на сегодняшний день, в котором уже ничего нет
+                        // (жалоба БОССа).
+                        shown.filter { (day, ls) -> day == markedDay || ls.isNotEmpty() }
+                            .forEach { (day, dayLessons) ->
                             item(key = "hdr$day") {
                                 Row(
                                     Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp),
@@ -1230,10 +1242,35 @@ fun LessonCard(lesson: Lesson, times: List<PairTime>, role: Role) {
         shape = RoundedCornerShape(10.dp)
     ) {
         Row(Modifier.padding(10.dp)) {
-            Column(Modifier.width(66.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("$pairNo", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MIET_BLUE)
+            // П.4: номер пары и время — в одной колонке фиксированной ширины,
+            // обе строки центрируются ПО ВИДИМОМУ ТЕКСТУ.
+            //
+            // Ширина 66.dp была меньше, чем «09:00–10:20» при 10.sp, и
+            // строка переносилась/уезжала вправо. Считаем ширину по самой
+            // длинной подписи и центрируем явно.
+            val timeWidth = if (timeLabel.isNotBlank()) 84.dp else 40.dp
+            Column(
+                Modifier.width(timeWidth),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "$pairNo",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = MIET_BLUE,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
                 if (timeLabel.isNotBlank()) {
-                    Text(timeLabel, fontSize = 10.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                    Text(
+                        timeLabel,
+                        fontSize = 10.sp,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
             Column(Modifier.weight(1f)) {
