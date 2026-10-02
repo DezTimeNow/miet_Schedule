@@ -7,6 +7,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
 
 /**
  * Тесты разбора ответов miet.ru и вспомогательной логики.
@@ -734,5 +735,25 @@ class ScheduleParseTest {
         val future = at(2026, 10, 5, 10)
         val label = LastUpdated.label(future, REF_NOW)
         assertTrue(label.startsWith("сегодня в ") || label.isNotEmpty())
+    }
+
+    // ───── шкала дней: Day с сервера 1..6 против нашего индекса 0..6 ─────
+
+    @Test
+    fun `Day сервера приводится к нашей шкале без сдвига`() {
+        // Сервер: Day 1=Пн … 6=Сб. Наш индекс: 0=Пн … 6=Вс.
+        // Если забыть «-1», в пятницу (todayDay=4) покажется четверг.
+        for (serverDay in 1..6) {
+            val ours = serverDay - 1
+            assertEquals(DAY_SHORT[serverDay - 1], DAY_SHORT[ours])
+        }
+        // Регрессия, о которой сообщил пользователь: 2 октября 2026 — пятница.
+        val friday = dayIndexFromCalendar(Calendar.FRIDAY)
+        assertEquals(4, friday)
+        // Ключ byDay для ПЯТНИЦЫ должен совпасть с todayDay, иначе
+        // покажутся пары четверга, а в шапке напишется «Четверг».
+        val serverKeyForFriday = 5 - 1
+        assertEquals(friday, serverKeyForFriday)
+        assertEquals("Пятница", DAY_NAMES[serverKeyForFriday])
     }
 }

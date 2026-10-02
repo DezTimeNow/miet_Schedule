@@ -4,8 +4,10 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.min
 
 /**
  * Список преподавателей и их расписания.
@@ -32,7 +34,15 @@ object TeacherIndex {
         val name: String,
         val short: String,
         val code: String = "",
-        val pairCount: Int = 0
+        val pairCount: Int = 0,
+        /**
+         * Когда ЭТИМУ преподавателю в последний раз перезапрашивали с сайта
+         * расписания его групп (мс). Не путать с общей меткой индекса
+         * [KEY_TS]: та одна на всех 658 человек и двигается только полной
+         * пересборкой. Без отдельного поля пришлось бы врать — показать
+         * «только что» остальным преподавателям, чьи группы не трогали.
+         */
+        val freshAt: Long = 0L
     )
 
     private const val KEY_LIST = "teacher_index"
@@ -147,6 +157,112 @@ object TeacherIndex {
         } catch (e: Exception) {
             Log.w(TAG, "Не разобрали индекс: ${e.message}")
             null
+        }
+    }
+
+    /**
+     * БЫСТРОЕ обновление одного преподавателя: ходит в сеть только по его группам.
+     *
+     * Зачем это отдельной функцией, а не [build]: [build] перезапрашивает все
+     * 344 группы ради построения индекса — это минуты. Преподавателю в среднем
+     * 1–8 групп, то есть 10–30 секунд вместо минут, и кнопка «Обновить» становится
+     * пригодной для нажатия, а не для того, чтобы уйти на кофе.
+     *
+     * Если групп преподавателя в кэше нет (первый запуск), индекс не на что
+     * искать — тогда отдаём false, и вызывающий код падает в полную пересборку.
+     */
+    suspend fun refreshTeacher(
+        api: MietApi,
+        groups: List<String>,
+        teacherCode: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val mine = groupsOf(api, groups, teacherCode)
+        if (mine.isEmpty()) return@withContext false
+
+        // Шесть потоков по его собственным группам: их мало, сервер не заметит.
+        val pool = Executors.newFixedThreadPool(min(6, mine.size))
+        var ok = 0
+        try {
+            pool.invokeAll(mine.map { g ->
+                Callable {
+                    runCatching { api.fetchSchedule(g) }
+                        .onSuccess { ok++ }
+                        .onFailure { Log.w(TAG, "Не обновили $g: ${it.message}") }
+                }
+            })
+        } finally {
+            pool.shutdown()
+        }
+        if (ok == 0) return@withContext false
+
+        // Метка свежести — только ему, в его запись. Общая KEY_TS не трогаем:
+        // она принадлежит полной пересборке [build] и всем 658 преподавателям.
+        val fresh = System.currentTimeMillis()
+        val lessons = lessonsOf(api, groups, teacherCode)
+        markFresh(api, teacherCode, fresh, lessons.size)
+        Log.i(TAG, "Быстрое обновление: ${mine.size} групп, $ok скачано, ${lessons.size} пар")
+        true
+    }
+
+    /**
+     * Группы, в которых ведёт этот преподаватель — читаются из кэша, без сети.
+     *
+     * Нужны для быстрого обновления: перезапрашивать все 344 группы ради одного
+     * человека — это минуты, а у препода обычно 1–8 групп.
+     */
+    suspend fun groupsOf(api: MietApi, groups: List<String>, teacherCode: String): List<String> =
+        withContext(Dispatchers.IO) {
+            val gson = GsonHolder.gson
+            val out = LinkedHashSet<String>()
+            for (g in groups) {
+                val raw = api.cachedSchedule(g) ?: continue
+                val data: List<Lesson> = try {
+                    gson.fromJson(raw, ScheduleResponse::class.java)?.data ?: emptyList()
+                } catch (e: Exception) {
+                    continue
+                }
+                if (data.any { key(it.classInfo?.teacherFull.orEmpty()) == teacherCode }) out.add(g)
+            }
+            out.toList()
+        }
+
+    /**
+     * Обновляет метку свежести ОДНОГО преподавателя, не пересобирая индекс.
+     *
+     * Пересборка [build] ходит в сеть по всем 344 группам — это минуты. Здесь
+     * же мы уже перезапросили его группы, поэтому честнее дописать свежесть
+     * прямо в его запись. Общая метка [KEY_TS] при этом НЕ трогается: она
+     * принадлежит полной пересборке и всем остальным преподавателям сразу.
+     */
+    fun markFresh(api: MietApi, teacherCode: String, ts: Long, pairCount: Int) {
+        val raw = api.loadTeacherIndex(KEY_LIST) ?: return
+        // Именно toMutableList(): toList() даёт неизменяемый список, и запись
+        // list[i] = … не компилируется («No 'set' operator method providing
+        // array access») — ошибка называет индекс, а виноват тип контейнера.
+        val list = try {
+            GsonHolder.gson.fromJson(raw, Array<Teacher>::class.java).toMutableList()
+        } catch (e: Exception) {
+            Log.w(TAG, "Индекс не разобрали для метке: ${e.message}")
+            return
+        }
+        val i = list.indexOfFirst { it.code == teacherCode }
+        if (i < 0) return
+        val t = list[i]
+        list[i] = t.copy(
+            freshAt = maxOf(t.freshAt, ts),
+            pairCount = if (pairCount > 0) pairCount else t.pairCount
+        )
+        api.saveTeacherIndex(KEY_LIST, GsonHolder.gson.toJson(list))
+    }
+
+    /** Свежесть своих пар у конкретного преподавателя, мс. 0 — неизвестно. */
+    fun freshAtOf(api: MietApi, teacherCode: String): Long {
+        val raw = api.loadTeacherIndex(KEY_LIST) ?: return 0L
+        return try {
+            GsonHolder.gson.fromJson(raw, Array<Teacher>::class.java)
+                .firstOrNull { it.code == teacherCode }?.freshAt ?: 0L
+        } catch (e: Exception) {
+            0L
         }
     }
 

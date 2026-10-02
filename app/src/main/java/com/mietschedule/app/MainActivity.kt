@@ -138,7 +138,14 @@ fun AppRoot(
                         }
                         Role.TEACHER -> {
                             val groups = api.fetchGroups()
-                            TeacherIndex.build(api, groups)
+                            // Полная пересборка индекса бьёт по всем 344 группам
+                            // — это минуты, и на кнопке «Обновить» в меню это
+                            // выглядело как зависшее приложение. Если у
+                            // преподавателя уже есть группы в кэше, ходим только
+                            // по ним; пересборка остаётся запасным путём.
+                            val quick = teacherCode.isNotEmpty() &&
+                                TeacherIndex.refreshTeacher(api, groups, teacherCode)
+                            if (!quick) TeacherIndex.build(api, groups)
                         }
                     }
                 }.onFailure { Log.w("Refresh", "Не обновилось: ${it.message}") }
@@ -693,6 +700,27 @@ fun ScheduleScreen(
                         error = "Список групп не загрузился — проверь интернет"
                         return@launch
                     }
+                    // ── Обновление по кнопке ──
+                    // Раньше здесь стоял только `lessonsOf` (чистый кэш), и
+                    // параметр `force` не читался ВООБЩЕ: препод нажимал
+                    // «Обновить», приложение перечитывало тот же кэш и
+                    // показывало «Обновлено: 3 дня назад» — то есть врало,
+                    // ничего не обновив. Теперь force реально ходит в сеть.
+                    if (force) {
+                        // Сначала дёшево: только его группы (10–30 сек). Если
+                        // их в кэше нет — падаем в полную пересборку индекса.
+                        val quick = withContext(Dispatchers.IO) {
+                            runCatching {
+                                TeacherIndex.refreshTeacher(api, groups, teacherCode)
+                            }.getOrElse {
+                                Log.w("Schedule", "Быстрое обновление не вышло", it); false
+                            }
+                        }
+                        if (!quick) {
+                            Log.i("Schedule", "Быстро не вышло — полная пересборка индекса")
+                            withContext(Dispatchers.IO) { TeacherIndex.build(api, groups) }
+                        }
+                    }
                     var found = withContext(Dispatchers.IO) {
                         TeacherIndex.lessonsOf(api, groups, teacherCode)
                     }
@@ -730,7 +758,20 @@ fun ScheduleScreen(
     val weekLessons = remember(lessons, weekRow) {
         lessons.filter { (it.dayNumber ?: 0) == weekRow }
     }
-    val byDay = weekLessons.groupBy { it.day ?: 1 }.toSortedMap()
+    // Ключи byDay и индекс todayDay должны быть НА ОДНОЙ шкале.
+    //
+    // Сервер отдаёт Day = 1..6 (1=Пн … 6=Сб) — это 1-based. А dayIndexFromCalendar
+    // возвращает 0..6 (0=Пн … 6=Вс) — 0-based. Смешивать их нельзя.
+    //
+    // БЫЛО: groupBy { it.day } (1..6) и byDay[todayDay] (0..6) — минус единица
+    // на ровно одно место. В пятницу todayDay=4, и приложение показывало
+    // byDay[4] — то есть ЧЕТВЕРГ, в шапке писало «Четверг», а карточки
+    // четверга подсвечивались как сегодняшние. Отсюда «у Кузнецова сегодня
+    // четверг», хотя на самом деле пятница.
+    //
+    // Теперь приводим к нашей шкале 0..6 сразу при группировке, а в шапке
+    // берём DAY_NAMES[day] без «-1».
+    val byDay = weekLessons.groupBy { (it.day ?: 1) - 1 }.toSortedMap()
     val todayLessons = byDay[todayDay].orEmpty()
 
     Scaffold(
@@ -813,13 +854,9 @@ fun ScheduleScreen(
                         Spacer(Modifier.width(6.dp))
                         Text("Обновляю…", fontSize = 12.sp, color = MIET_BLUE)
                     } else {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Обновить расписание",
-                            tint = MIET_BLUE,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(5.dp))
+                        // Без иконки Refresh: вместе с надписью «Обновить» она
+                        // читалась как вторая кнопка. Осталась одна кнопка
+                        // с надписью — как просил.
                         Text("Обновить", fontSize = 12.sp, color = MIET_BLUE)
                     }
                 }
@@ -839,11 +876,12 @@ fun ScheduleScreen(
                     onClick = { showWeek = true },
                     label = { Text("Вся неделя", fontSize = 13.sp) }
                 )
+                // Раньше здесь стоял третий дубль кнопки — IconButton с глифом «↻».
+                // Вместе с иконкой внутри TextButton («Обновить») у студента было
+                // ТРИ кнопки обновления на одном экране, из них одна просто
+                // непонятная стрелочка. По просьбе оставлена одна — с надписью,
+                // она стоит строкой выше и при нажатии показывает «Обновляю…».
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { load(true) }, enabled = !refreshing) {
-                    if (refreshing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text("↻", fontSize = 20.sp, color = MIET_BLUE)
-                }
             }
 
             if (error != null) {
@@ -896,7 +934,9 @@ fun ScheduleScreen(
                                             .padding(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
                                         Text(
-                                            DAY_NAMES.getOrElse(day - 1) { "День $day" },
+                                            // day уже в нашей шкале 0..6 (0=Пн),
+                                            // см. groupBy { (it.day ?: 1) - 1 } выше.
+                                            DAY_NAMES.getOrElse(day) { "День ${day + 1}" },
                                             fontWeight = FontWeight.Bold, fontSize = 14.sp,
                                             color = if (day == todayDay) Color.White else Color(0xFF1A1A1A)
                                         )
