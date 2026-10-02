@@ -62,7 +62,8 @@ class MietApi(private val context: Context) {
             return cached.split("|||").filter { it.isNotBlank() }
         }
         val raw = post(ApiPaths.GROUPS, null)
-        val list = GsonHolder.gson.fromJson(raw, Array<String>::class.java).toList()
+        val list = runCatching { GsonHolder.gson.fromJson(raw, Array<String>::class.java).toList() }
+            .getOrElse { emptyList() }
         // Пустой ответ НЕ кэшируем. Сервер при сбое может отдать [], и раньше
         // такой список записывался как обычный: на неделю (TTL) пропадали все
         // группы, до следующего принудительного обновления. Теперь кэш
@@ -252,14 +253,21 @@ class MietApi(private val context: Context) {
         val fresh = prefs.getLong("${KEY_AUD}_ts", 0L)
         val ttl = 7L * 24 * 60 * 60 * 1000
         if (cached != null && System.currentTimeMillis() - fresh < ttl) {
-            return GsonHolder.gson.fromJson(cached, Array<Audience>::class.java).toList()
+            // Кэш читаем через runCatching: оборванная запись в prefs (например,
+            // после падения при записи) дала бы JsonSyntaxException прямо в
+            // этой строке, и экран аудиторий падал бы целиком.
+            val hit = runCatching { GsonHolder.gson.fromJson(cached, Array<Audience>::class.java).toList() }.getOrNull()
+            if (hit != null) return hit
+            Log.w("MietApi", "Кэш аудиторий битый, читаем с сервера")
         }
         val raw = post(ApiPaths.AUDIENCES, null)
         val list = GsonHolder.gson.fromJson(raw, Array<Audience>::class.java).toList()
-        prefs.edit()
-            .putString(KEY_AUD, raw)
-            .putLong("${KEY_AUD}_ts", System.currentTimeMillis())
-            .apply()
+        if (list.isNotEmpty()) {
+            prefs.edit()
+                .putString(KEY_AUD, raw)
+                .putLong("${KEY_AUD}_ts", System.currentTimeMillis())
+                .apply()
+        }
         return list
     }
 

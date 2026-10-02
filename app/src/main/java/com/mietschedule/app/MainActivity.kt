@@ -811,7 +811,10 @@ fun ScheduleScreen(
     // пятницы cw=7 даёт 6 = «Вс», а показывало «Сб» из-за того же сдвига.
     // Из-за этого «Сегодня» называло неверный день и карточки чужих пар
     // подсвечивались как сегодняшние.
-    val todayDay = remember { dayIndexFromCalendar(Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) }
+    // todayDay пересчитывается при каждом показе экрана, а не один раз:
+    // раньше было remember без ключа, и если приложение висело открытым
+    // через полночь, «Сегодня» продолжало называть вчерашний день.
+    val todayDay = dayIndexFromCalendar(Calendar.getInstance().get(Calendar.DAY_OF_WEEK))
     val scope = rememberCoroutineScope()
 
     // Звезда в шапке расписания. prefs.isFav() — обычная функция, Compose о ней
