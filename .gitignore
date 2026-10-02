@@ -1,0 +1,34 @@
+# Сборки Android
+build/
+.gradle/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Локальное
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Кэши и ключи
+teacher-index.json
+/tmp-cache/
+*.log
+
+# Отладочные снимки экрана и дампы UI — служебные файлы, в репозитории
+# не требуются
+*.png
+device_cache.xml
+device_prefs.xml
+screen*.xml
+ui.xml
+
+# Скрипты сборки и снятия снимков для локального стенда: содержат пути к
+# SDK и параметры конкретной машины, переносимость в другие окружения
+# не гарантирована
+run.sh
+shot.sh
