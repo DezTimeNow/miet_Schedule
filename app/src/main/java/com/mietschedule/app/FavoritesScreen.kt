@@ -80,42 +80,15 @@ fun FavoritesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
-                title = {
-                    Column {
-                        Text("Избранное", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        val total = favGroups.size + favTeachers.size + favAudiences.size
-                        Text(
-                            if (total == 0) "Пока пусто"
-                            else "$total " + plural(total, "запись", "записи", "записей"),
-                            color = Color(0xFFBBDEFB), fontSize = 12.sp
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Text("\u2039", color = Color.White, fontSize = 28.sp)
-                    }
-                },
-                // Кнопка обновления на КАЖДОМ экране — требование БОССа.
-                // Из избранного тоже: иначе обновиться можно только в два
-                // тапа назад, и человек сдаётся и ждёт «само».
-                actions = {
-                    IconButton(onClick = onRefresh, enabled = !refreshing) {
-                        if (refreshing) CircularProgressIndicator(
-                            Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
-                        ) else Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Обновить всё",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    TextButton(onClick = onChangeRole) {
-                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
-                    }
-                }
+            val totalFav = favGroups.size + favTeachers.size + favAudiences.size
+            MietTopBar(
+                title = "Избранное",
+                subtitle = if (totalFav == 0) "Пока пусто"
+                else "$totalFav " + plural(totalFav, "запись", "записи", "записей"),
+                onRefresh = onRefresh,
+                onChangeRole = onChangeRole,
+                refreshing = refreshing,
+                onBack = onBack
             )
         }
     ) { pad ->

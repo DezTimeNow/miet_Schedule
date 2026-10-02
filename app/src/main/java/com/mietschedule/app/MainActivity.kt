@@ -266,7 +266,17 @@ fun AppRoot(
                         prefs.save(name)
                         screen = Screen.SCHEDULE
                     },
-                    onBack = { screen = Screen.PICK_ROLE }
+                    onBack = { screen = Screen.PICK_ROLE },
+                    // Раньше здесь передавались ТОЛЬКО onChosen и onBack.
+                    // onRefresh не передавался, поэтому срабатывал его
+                    // аргумент по умолчанию `= {}` из сигнатуры: кнопка в шапке нажималась и ничего
+                    // не делала — «преподаватель ещё не выбран, обновление
+                    // не жмётся». Заодно не передавались «Роль», refreshing
+                    // и прогресс, то есть шапка у этой роли отличалась.
+                    onRefresh = { refreshCurrent() },
+                    onChangeRole = { screen = Screen.PICK_ROLE },
+                    refreshing = refreshing,
+                    refreshNote = refreshNote
                 )
                 Role.AUDIENCE -> AudiencePickerScreen(
                     api, prefs,
@@ -283,9 +293,9 @@ fun AppRoot(
                     onBack = { screen = Screen.PICK_ROLE },
                     onRefresh = { refreshCurrent() },
                     onChangeRole = { screen = Screen.PICK_ROLE },
+                    refreshing = refreshing,
                     refreshNote = refreshNote,
                     onAbout = { screen = Screen.ABOUT },
-                    refreshing = refreshing
                 )
             }
         }
@@ -402,31 +412,18 @@ fun GroupPickerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
-                title = {
-                    Column {
-                        Text("Расписание МИЭТ", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Text("Выбери свою группу", color = Color(0xFFBBDEFB), fontSize = 12.sp)
-                    }
-                },
-                actions = {
-                    // Возврат к выбору роли: без него из экрана группы можно было
-                    // выйти только кнопкой «назад», которая закрывает приложение.
-                    TextButton(onClick = onSwitchRole) {
-                        Text("Сменить роль", color = Color.White, fontSize = 13.sp)
-                    }
-                    // Кнопка обновления должна быть на КАЖДОМ экране: требование
-                    // «где бы я ни нажал — обновилось всё». Экраны выбора группы
-                    // и преподавателя её не имели.
-                    IconButton(onClick = onRefresh, enabled = !refreshing) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Обновить всё",
-                            tint = Color.White
-                        )
-                    }
-                }
+            // Раньше здесь стоял текст «Сменить роль» СЛЕВА от кнопки обновления.
+            // Он шире, чем стрелка «‹» у преподавателя и аудитории, и из-за
+            // этого обновление на экране студента уезжало вправо относительно
+            // остальных ролей. Теперь шапка общая — MietTopBar, стрелка «‹»
+            // ведёт к выбору роли.
+            MietTopBar(
+                title = "Расписание МИЭТ",
+                subtitle = "Выбери свою группу",
+                onRefresh = onRefresh,
+                onChangeRole = onSwitchRole,
+                refreshing = refreshing,
+                onBack = onSwitchRole
             )
         }
     ) { pad ->
@@ -978,49 +975,21 @@ Role.AUDIENCE -> {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
-                title = {
-                    Column {
-                        Text(group, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            buildString {
-                                append(role.title.removePrefix("Я "))
-                                append(" • ")
-                                append(if (semestr.isBlank()) "Загрузка…" else semestr)
-                            },
-                            color = Color(0xFFBBDEFB), fontSize = 12.sp
-                        )
-                    }
-                },
-                actions = {
-                    // В ШАПКЕ РОВНО ДВЕ КНОПКИ: обновление и «Роль».
-                    //
-                    // Раньше здесь стояло восемь элементов (‹ › • ⭯ ☆ Избранное
-                    // Сменить Роль) — они физически не влезали, ломались и
-                    // выглядели свалкой. Переключатель недели ушёл на
-                    // отдельную строку под шапкой, звезда и «Избранное» — в
-                    // строку вкладок.
-                    //
-                    // Обновление — ПЕРВОЕ справа и на ОДНОМ И ТОМ ЖЕ месте на
-                    // всех семи экранах: просьба «где бы я ни находился,
-                    // обновлялось всё». Показывает прогресс, потому что 343
-                    // группы — это ~50 секунд, и молчащее ожидание читается
-                    // как зависание.
-                    IconButton(onClick = onRefreshAll, enabled = !refreshing) {
-                        if (refreshing) CircularProgressIndicator(
-                            Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
-                        ) else Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Обновить всё",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    TextButton(onClick = { onChangeRole() }) {
-                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
-                    }
-                }
+            MietTopBar(
+                title = group,
+                subtitle = role.title.removePrefix("Я ") + " • " +
+                        (if (semestr.isBlank()) "Загрузка…" else semestr),
+                onRefresh = onRefreshAll,
+                onChangeRole = onChangeRole,
+                refreshing = refreshing,
+                // Назад — к списку своей сущности (смена группы/аудитории).
+                onBack = onChangeEntity,
+                // Звезда уехала из строки вкладок в шапку: там она стояла
+                // ПРАВЕЕ «Сегодня»/«Вся неделя» и при смене ширины подписей
+                // съезжала. В шапке у неё фиксированный слот.
+                isFav = isFav,
+                onToggleFav = { prefs.toggleFavFor(role, group); refreshFav() },
+                onOpenFavorites = onOpenFavorites
             )
         }
     ) { pad ->
@@ -1086,10 +1055,20 @@ Role.AUDIENCE -> {
                 // Сброс на текущую неделю — только когда со сдвига. Стоит
                 // ПОСЛЕ «›»: иначе при первом нажатии «›» он появлялся и
                 // сдвигал «›» влево, и второе нажатие попадало уже в него.
+                // Кнопка «сейчас» РАНЬШЕ появлялась только при сдвиге недели.
+                // Она была выше строки вкладок, поэтому всё расписание
+                // уезжало вниз на высоту кнопки — интерфейс «прыгал» при
+                // каждом нажатии «›» (жалоба БОССа).
+                //
+                // Теперь место под неё зарезервировано ВСЕГДА: пустой Spacer
+                // той же ширины, когда сдвига нет. Высота строки постоянна,
+                // нажатие ничего не двигает, а кнопка появляется по запросу.
                 if (weekOffset != 0) {
                     TextButton(onClick = { weekOffset = 0 }) {
                         Text("сейчас", fontSize = 12.sp, color = MIET_BLUE)
                     }
+                } else {
+                    Spacer(Modifier.width(56.dp))
                 }
             }
 
@@ -1097,60 +1076,34 @@ Role.AUDIENCE -> {
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Ширина первой вкладки ФИКСИРОВАНА. Её подпись меняется при
+                // сдвиге недели: «Сегодня: Пт 02.10» (19 символов) →
+                // «Пт 09.10» (8 символов). Без фиксированной ширины вкладка
+                // «Вся неделя» уезжала влево вместе с ней — интерфейс
+                // «прыгал» вбок при каждом нажатии «›», хотя высота и не
+                // менялась (жалоба БОССа).
                 FilterChip(
+                    modifier = Modifier.width(196.dp),
                     selected = !showWeek,
                     onClick = { showWeek = false },
-                    // Дата и тут: при сдвиге недели «Сегодня» вообще вводит в
-                    // заблуждение, поэтому подпись становится «Пт 02.10».
                     label = {
                         Text(
-                            // На сдвинутой неделе слово «Сегодня» вводит в
-                            // заблуждение: сегодня всё ещё 02.10, а тут уже
-                            // 09.10. Поэтому подпись становится датой недели.
                             when {
                                 !isCurrentWeek -> "${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}"
                                 todayDay == 0 -> "Вс (выходной)"
                                 else -> "Сегодня: ${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}"
                             },
-                            fontSize = 13.sp
+                            fontSize = 13.sp,
+                            maxLines = 1
                         )
                     }
                 )
                 FilterChip(
+                    modifier = Modifier.width(120.dp),
                     selected = showWeek,
                     onClick = { showWeek = true },
-                    label = { Text("Вся неделя", fontSize = 13.sp) }
+                    label = { Text("Вся неделя", fontSize = 13.sp, maxLines = 1) }
                 )
-                Spacer(Modifier.weight(1f))
-                // Звезда и список избранного ушли сюда из шапки: там было
-                // слишком тесно, а здесь им не мешают вкладки.
-                TextButton(onClick = { prefs.toggleFavFor(role, group); refreshFav() }) {
-                    Text(
-                        if (isFav) "★" else "☆",
-                        color = if (isFav) Color(0xFFE65100) else Color(0xFF78909C),
-                        fontSize = 19.sp
-                    )
-                }
-                // Иконки вместо надписей: на экране 1080px строка с двумя
-                // вкладками, звездой и двумя словами «Избранное»/«Сменить»
-                // не помещалась — правые кнопки просто обрезались. Две иконки
-                // занимают 96px вместо ~340.
-                IconButton(onClick = onOpenFavorites) {
-                    Icon(
-                        Icons.Filled.List,
-                        contentDescription = "Избранное",
-                        tint = Color(0xFF78909C),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = { onChangeEntity() }) {
-                    Icon(
-                        Icons.Filled.Edit,
-                        contentDescription = "Сменить группу или аудиторию",
-                        tint = Color(0xFF78909C),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
             }
 
             if (error != null) {

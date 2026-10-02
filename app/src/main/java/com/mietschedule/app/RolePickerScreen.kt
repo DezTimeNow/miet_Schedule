@@ -61,37 +61,17 @@ fun RolePickerScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
-                title = {
-                    Column {
-                        Text("Расписание МИЭТ", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Text("Кто ты?", color = Color(0xFFBBDEFB), fontSize = 12.sp)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onRefresh, enabled = !refreshing) {
-                        // Иконка Refresh, а не глиф «↻»: та же кнопка должна
-                        // выглядеть одинаково на всех экранах (просьба БОССа).
-                        if (refreshing) CircularProgressIndicator(
-                            Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
-                        ) else Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Обновить всё",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    // «Роль» — справа от обновления, как на остальных экранах,
-                    // чтобы иконка обновления стояла в одном месте.
-                    TextButton(onClick = onChangeRole) {
-                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
-                    }
-                                        // «О программе» убрана из шапки: пока она стояла справа от
-                    // обновления, иконка обновления съезжала с 854 на 729, то
-                    // есть «одно и то же место на всех экранах» не выполнялось.
-                    // Доступ к экрану остался внизу, отдельной кнопкой.
-                }
+            // Первый экран: назад идти некуда, поэтому под стрелкой
+            // зарезервировано пустое место той же ширины — иначе «Роль»
+            // и обновление стояли бы на других координатах, чем на всех
+            // остальных экранах.
+            MietTopBar(
+                title = "Расписание МИЭТ",
+                subtitle = "Кто ты?",
+                onRefresh = onRefresh,
+                onChangeRole = onChangeRole,
+                refreshing = refreshing,
+                onBack = null
             )
         }
     ) { pad ->

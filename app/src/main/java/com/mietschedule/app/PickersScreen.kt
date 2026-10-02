@@ -137,48 +137,17 @@ fun TeacherPickerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
-                title = {
-                    Column {
-                        Text("Преподаватель", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            if (teachers.isEmpty()) "Загрузка…"
-                            else "${byLetter.values.sumOf { it.size }} преподавателей",
-                            color = Color(0xFFBBDEFB), fontSize = 12.sp
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Text("\u2039", color = Color.White, fontSize = 28.sp)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onRefresh, enabled = !refreshing) {
-                        // Та же иконка, что и в шапке расписания: глиф «↻» и
-                        // иконка Refresh читались как две разные кнопки, а
-                        // просьба была одна кнопка, везде одинаковая.
-                        if (refreshing) CircularProgressIndicator(
-                            Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
-                        ) else Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Обновить всё",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    // «Роль» справа от обновления — на всех экранах, иначе
-                    // иконка обновления прыгает по шапке и «одно место»
-                    // не выполняется.
-                    TextButton(onClick = onChangeRole) {
-                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
-                    }
-                                        // «О программе» убрана из шапки: пока она стояла справа от
-                    // обновления, иконка обновления съезжала с 855 на 728, то
-                    // есть «одно и то же место на всех экранах» не выполнялось.
-                    // Экран доступен с экрана роли — кнопкой внизу.
-                }
+            // Общая шапка MietTopBar. Размер иконки обновления здесь раньше был
+            // 24.dp, на остальных экранах 22.dp — при одинаковой кнопке это
+            // давало разную ширину и, следовательно, разный слот.
+            MietTopBar(
+                title = "Преподаватель",
+                subtitle = if (teachers.isEmpty()) "Загрузка…"
+                else "${byLetter.values.sumOf { it.size }} преподавателей",
+                onRefresh = onRefresh,
+                onChangeRole = onChangeRole,
+                refreshing = refreshing,
+                onBack = onBack
             )
         }
     ) { pad ->
@@ -216,7 +185,7 @@ fun TeacherPickerScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Сайт не отдаёт их отдельно — беру из расписаний всех групп. Один раз, потом из кэша.",
+                        "Собираю из расписаний всех групп. Один раз, потом из кэша.",
                         fontSize = 12.sp, color = Color.Gray
                     )
                     Spacer(Modifier.height(16.dp))
@@ -420,47 +389,17 @@ fun AudiencePickerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
-                title = {
-                    Column {
-                        Text("Аудитория", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            if (list.isEmpty()) "Загрузка…" else "${list.size} " + plural(list.size, "аудитория", "аудитории", "аудиторий"),
-                            color = Color(0xFFBBDEFB), fontSize = 12.sp
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Text("\u2039", color = Color.White, fontSize = 28.sp)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onRefresh, enabled = !refreshing) {
-                        // Та же иконка, что и в шапке расписания: глиф «↻» и
-                        // иконка Refresh читались как две разные кнопки, а
-                        // просьба была одна кнопка, везде одинаковая.
-                        if (refreshing) CircularProgressIndicator(
-                            Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
-                        ) else Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Обновить всё",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    // «Роль» справа от обновления — на всех экранах, иначе
-                    // иконка обновления прыгает по шапке и «одно место»
-                    // не выполняется.
-                    TextButton(onClick = onChangeRole) {
-                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
-                    }
-                                        // «О программе» убрана из шапки: пока она стояла справа от
-                    // обновления, иконка обновления съезжала с 855 на 728, то
-                    // есть «одно и то же место на всех экранах» не выполнялось.
-                    // Экран доступен с экрана роли — кнопкой внизу.
-                }
+            // Та же общая шапка, что и у преподавателя и студента: одинаковый
+            // размер иконки обновления (22.dp, не 24.dp) и одинаковый набор
+            // соседей, поэтому кнопка занимает один и тот же слот.
+            MietTopBar(
+                title = "Аудитория",
+                subtitle = if (list.isEmpty()) "Загрузка…"
+                else "${list.size} " + plural(list.size, "аудитория", "аудитории", "аудиторий"),
+                onRefresh = onRefresh,
+                onChangeRole = onChangeRole,
+                refreshing = refreshing,
+                onBack = onBack
             )
         }
     ) { pad ->
