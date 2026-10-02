@@ -646,6 +646,18 @@ fun ScheduleScreen(
     var loading by remember { mutableStateOf(true) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // ─── СВЯЗКА «СЕГОДНЯ» И НЕДЕЛИ ───
+    //
+    // Фильтр «Сегодня» имеет смысл только на текущей неделе. Кнопки ‹ ›
+    // листают учебную неделю, а showWeek жил своей жизнью: сдвинул неделю —
+    // остался в режиме «Сегодня», где todayLessons при weekOffset != 0 пуст
+    // по определению (isCurrentWeek == false), и экран показывал
+    // «Пятница 9.10.2026 пар нет» вместо расписания недели.
+    //
+    // Теперь сдвиг недели САМ снимает фильтр и показывает всю неделю.
+    // Обратно — нажатием на «Сегодня»: восстановить неделю 0 вручную
+    // кнопкой «сейчас», потом переключить вкладку. Кнопка «Сегодня» —
+    // единственное место, где showWeek задаётся напрямую.
     var showWeek by remember { mutableStateOf(false) }
     // Метка «обновлено …» из кэша. Держим в state, а не читаем напрямую:
     // после нажатия «Обновить» значение должно смениться на глазах.
@@ -687,6 +699,11 @@ fun ScheduleScreen(
         val ss = withContext(Dispatchers.IO) { api.semestrStart() }
         semestrStartIso = ss
         weekOffset = 0
+        // showWeek здесь НЕ трогаем: вход на экран расписания — это
+        // «открыл посмотреть сегодня». Снятие фильтра относится только к
+        // ПЕРЕХОДУ на другую неделю. Иначе приложение открывалось бы сразу
+        // на «Вся неделя» (18 пар вместо сегодняшних двух) — БОСС этого
+        // не просил, и стартовое поведение менять нельзя.
         weekName = WeekType.currentName(ss)
         weekRow = WeekType.currentRowIndex(ss)
     }
@@ -1033,7 +1050,11 @@ Role.AUDIENCE -> {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = { weekOffset-- },
+                    // Сдвиг недели САМ снимает фильтр «Сегодня»: сдвинутая
+                    // неделя — это обзор недели, а не «сегодня». Поэтому
+                    // showWeek = true в обоих направлениях. Обратно фильтр
+                    // возвращается только нажатием на «Сегодня».
+                    onClick = { weekOffset--; showWeek = true },
                     enabled = weekOffset > -4
                 ) {
                     Text("\u2039", color = MIET_BLUE, fontSize = 22.sp)
@@ -1051,7 +1072,7 @@ Role.AUDIENCE -> {
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
                 IconButton(
-                    onClick = { weekOffset++ },
+                    onClick = { weekOffset++ ; showWeek = true },
                     enabled = weekOffset < 4
                 ) {
                     Text("\u203A", color = MIET_BLUE, fontSize = 22.sp)
@@ -1068,7 +1089,10 @@ Role.AUDIENCE -> {
                 // той же ширины, когда сдвига нет. Высота строки постоянна,
                 // нажатие ничего не двигает, а кнопка появляется по запросу.
                 if (weekOffset != 0) {
-                    TextButton(onClick = { weekOffset = 0 }) {
+                    // «сейчас» возвращает текущую неделю И снимает фильтр
+                    // «Сегодня»: показывается вся неделя. Возврат в режим
+                    // «Сегодня» — отдельное нажатие на саму вкладку.
+                    TextButton(onClick = { weekOffset = 0; showWeek = true }) {
                         Text("сейчас", fontSize = 12.sp, color = MIET_BLUE)
                     }
                 } else {
@@ -1080,20 +1104,28 @@ Role.AUDIENCE -> {
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Ширина первой вкладки ФИКСИРОВАНА. Её подпись меняется при
-                // сдвиге недели: «Сегодня: Пт 02.10» (19 символов) →
-                // «Пт 09.10» (8 символов). Без фиксированной ширины вкладка
-                // «Вся неделя» уезжала влево вместе с ней — интерфейс
-                // «прыгал» вбок при каждом нажатии «›», хотя высота и не
-                // менялась (жалоба БОССа).
+                // Ширина вкладок ФИКСИРОВАНА: без неё «Вся неделя» уезжала
+                // влево вместе с подписью первой вкладки, и интерфейс
+                // «прыгал» вбок при каждом нажатии «›» (жалоба БОССа).
+                //
+                // Подпись «Сегодня» теперь ВСЕГДА с датой сегодняшнего дня.
+                // Раньше на сдвинутой неделе она становилась «Пт 09.10»,
+                // но это было враньём: вкладка «Сегодня» при сдвиге была
+                // мёртвой — todayLessons там пуст по определению. Теперь
+                // сдвиг снимает фильтр (см. showWeek), и подпись «Сегодня»
+                // означает ровно то, что написано: сегодняшний день.
                 FilterChip(
                     modifier = Modifier.width(196.dp),
                     selected = !showWeek,
-                    onClick = { showWeek = false },
+                    // Возврат фильтра «Сегодня» — единственное место, где
+                    // showWeek сбрасывается в false. Работает только на
+                    // текущей неделе: на сдвинутой todayLessons пуст и
+                    // экран показал бы «пар нет».
+                    onClick = { if (isCurrentWeek) showWeek = false },
                     label = {
                         Text(
                             when {
-                                !isCurrentWeek -> "${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}"
+                                !isCurrentWeek -> "Сегодня: ${DAY_SHORT[todayDay]}"
                                 todayDay == 0 -> "Вс (выходной)"
                                 else -> "Сегодня: ${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}"
                             },
