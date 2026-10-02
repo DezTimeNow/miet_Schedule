@@ -114,8 +114,15 @@ fun RolePickerScreen(
                 )
             }
 
-            Role.entries.forEach { role ->
-                RoleCard(role, role == current) { onPick(role) }
+            // Список ролей НИЖЕ карточки текущей роли содержит только
+            // ОСТАВШИЕСЯ роли. Раньше здесь был полный Role.entries, и уже
+            // выбранная роль показывалась дважды: отдельной карточкой наверху
+            // («Аудитория») и снова в списке ниже. Выглядело как баг —
+            // «зачем мне написано дважды, какое я меню выбрал».
+            // Подпись «Посмотреть расписание другой ролью» теперь соответствует
+            // содержимому: в списке именно другие роли.
+            Role.entries.filter { it != current }.forEach { role ->
+                RoleCard(role, false) { onPick(role) }
                 Spacer(Modifier.height(10.dp))
             }
             Spacer(Modifier.height(24.dp))
