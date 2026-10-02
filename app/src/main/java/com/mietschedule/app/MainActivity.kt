@@ -30,6 +30,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 
 internal val MIET_BLUE = Color(0xFF0057B8)
 
@@ -529,6 +532,9 @@ fun ScheduleScreen(
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showWeek by remember { mutableStateOf(false) }
+    // Метка «обновлено …» из кэша. Держим в state, а не читаем напрямую:
+    // после нажатия «Обновить» значение должно смениться на глазах.
+    var lastUpdated by remember { mutableStateOf(0L) }
     var weekName by remember { mutableStateOf(WeekType.currentName()) }
     var weekRow by remember { mutableStateOf(WeekType.currentRowIndex()) }
 
@@ -560,6 +566,18 @@ fun ScheduleScreen(
         weekName = WeekType.currentName(ss)
         weekRow = WeekType.currentRowIndex(ss)
     }
+
+    /** Пересчитать метку последнего обновления из кэша. */
+    fun refreshLastUpdated() {
+        scope.launch {
+            val ts = withContext(Dispatchers.IO) { api.lastUpdatedAt(role, group) }
+            lastUpdated = ts
+        }
+    }
+
+    // Дата последнего обновления. Перечитываем и при смене роли/объекта, и
+    // после каждой загрузки — иначе после «Обновить» осталась бы старая дата.
+    LaunchedEffect(group, role) { refreshLastUpdated() }
 
     fun apply(raw: String) {
         val resp = GsonHolder.gson.fromJson(raw, ScheduleResponse::class.java)
@@ -694,6 +712,11 @@ fun ScheduleScreen(
                     if (found.isEmpty()) error = "Пар не найдено — проверь ФИО"
                 }
             }
+            // Дату перечитываем ЗДЕСЬ, после всех веток ролей: метка в кэше
+            // пишется в момент успешной загрузки, и только после этого есть
+            // что показывать. Раньше пересчёт стоял в onClick до ответа сервера —
+            // это была гонка, и дата на экране оставалась старой.
+            withContext(Dispatchers.IO) { lastUpdated = api.lastUpdatedAt(role, group) }
             loading = false
             refreshing = false
         }
@@ -758,8 +781,52 @@ fun ScheduleScreen(
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
 
+            // ─── строка «обновлено …» + кнопка обновления ───
+            // Отдельной строкой под шапкой, а не в actions TopAppBar: там
+            // кнопка — узкий IconButton, и текст с датой рядом не влез бы,
+            // а ещё шапка и так набита («Сменить», «Роль», избранное, звёздочка).
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Обновлено: ${LastUpdated.label(lastUpdated)}",
+                    fontSize = 11.sp,
+                    color = Color(0xFF78909C),
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    // Сначала перезагрузка, ПОТОМ пересчёт даты. Раньше стояло
+                    // `load(true); refreshLastUpdated()` — и это была гонка:
+                    // load() запускает корутину, а refreshLastUpdated() успевал
+                    // прочитать кэш ДО того, как сервер ответил и метка сменилась.
+                    // Итог: кэш обновлялся, а на экране оставалась старая дата.
+                    // refreshLastUpdated() внутри load() держит правильный порядок.
+                    onClick = { load(true) },
+                    enabled = !refreshing,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                ) {
+                    if (refreshing) {
+                        CircularProgressIndicator(
+                            Modifier.size(14.dp), strokeWidth = 2.dp, color = MIET_BLUE
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Обновляю…", fontSize = 12.sp, color = MIET_BLUE)
+                    } else {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Обновить расписание",
+                            tint = MIET_BLUE,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text("Обновить", fontSize = 12.sp, color = MIET_BLUE)
+                    }
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(

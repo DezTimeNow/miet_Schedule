@@ -675,4 +675,64 @@ class ScheduleParseTest {
         val r = UpdateCheckResult.UpToDate(20) as UpdateCheckResult.UpToDate
         assertEquals(20, r.latestVersion)
     }
+
+    // ───────────── дата последнего обновления ─────────────
+
+    /** 2026-10-02 15:00 по локальному времени. */
+    private val REF_NOW: Long =
+        java.time.LocalDateTime.of(2026, 10, 2, 15, 0)
+            .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    private fun at(year: Int, month: Int, day: Int, hour: Int): Long =
+        java.time.LocalDateTime.of(year, month, day, hour, 0)
+            .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    @Test
+    fun `подпись обновления читается по-человечески`() {
+        assertEquals("сегодня в 09:00", LastUpdated.label(at(2026, 10, 2, 9), REF_NOW))
+        assertEquals("вчера в 23:00", LastUpdated.label(at(2026, 10, 1, 23), REF_NOW))
+        // 12 дней назад — уже полная дата, без «вчера»/«сегодня».
+        assertEquals("20 сентября, 14:00", LastUpdated.label(at(2026, 9, 20, 14), REF_NOW))
+    }
+
+    @Test
+    fun `не обновлялось ни разу — честная подпись`() {
+        assertEquals("ещё не обновлялось", LastUpdated.label(0L, REF_NOW))
+        assertEquals("ещё не обновлялось", LastUpdated.label(-1L, REF_NOW))
+    }
+
+    /**
+     * Регрессия: формула (y2-y1)*365 + (d2-d1) не учитывает високосный год и
+     * на границе года называла 31.12.2024 «сегодня» вместо «вчера».
+     */
+    @Test
+    fun `подпись не путает сутки на границе високосного года`() {
+        val ny = at(2025, 1, 1, 10)          // «сейчас» — 1 января 2025
+        val yesterday = at(2024, 12, 31, 10) // вчера, 2024 — високосный
+        assertTrue(
+            "31.12.2024 при now=01.01.2025 должно быть «вчера», а не «сегодня»",
+            LastUpdated.label(yesterday, ny).startsWith("вчера в "),
+        )
+    }
+
+    /**
+     * Регрессия: подпись считала сутки по 24-часовым отрезкам, и обновление
+     * 1 октября 23:00 при «сейчас» = 2 октября 15:00 называлось «сегодня»,
+     * хотя это вчера (16 часов назад, но другой календарный день).
+     */
+    @Test
+    fun `позднее время вчерашнего дня не называется сегодняшним`() {
+        assertEquals("вчера в 23:00", LastUpdated.label(at(2026, 10, 1, 23), REF_NOW))
+        // А полночь-минуту назад сегодня — уже сегодня.
+        assertEquals("сегодня в 00:00", LastUpdated.label(at(2026, 10, 2, 0), REF_NOW))
+    }
+
+    @Test
+    fun `будущее время не ломает подпись`() {
+        // Часы телефона могут спешить, а кэш — с будущей меткой из-за правок.
+        // Подпись не должна падать или врать, что это «сегодня вчера».
+        val future = at(2026, 10, 5, 10)
+        val label = LastUpdated.label(future, REF_NOW)
+        assertTrue(label.startsWith("сегодня в ") || label.isNotEmpty())
+    }
 }

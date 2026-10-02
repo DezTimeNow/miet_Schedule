@@ -128,6 +128,15 @@ object TeacherIndex {
         result
     }
 
+    /**
+     * Ключ метки времени индекса. Сделан публичным, потому что экран «О программе»
+     * показывает дату последнего обновления и не должен знать про `private const`.
+     */
+    const val TS_KEY = KEY_TS
+
+    /** Когда индекс преподавателей последний раз собирали с сайта, мс. */
+    fun indexBuiltAt(api: MietApi): Long = api.loadTeacherIndexTs(TS_KEY)
+
     /** Кэшированный индекс или null, если его нет либо он протух. */
     fun cached(api: MietApi): List<Teacher>? {
         val raw = api.loadTeacherIndex(KEY_LIST) ?: return null

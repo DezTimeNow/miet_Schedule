@@ -216,7 +216,7 @@ fun AboutScreen(
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (checking) "Проверяю…" else "Проверить обновления (v17)",
+                    if (checking) "Проверяю…" else "Проверить обновления",
                     color = Color.White,
                     fontSize = 14.sp,
                 )

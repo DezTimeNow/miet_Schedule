@@ -92,6 +92,41 @@ class MietApi(private val context: Context) {
     fun cachedAudience(code: Int): String? = prefs.getString("aud_$code", null)
 
     /**
+     * Когда последний раз РЕАЛЬНО обновили расписание с сайта.
+     *
+     * При каждой успешной загрузке рядом с данными уже пишется метка `<ключ>_ts`,
+     * поэтому берём её, а не «сейчас»: иначе на экране всегда было бы «только что»
+     * и пользователь не видел бы, что кнопка реально что-то обновила.
+     *
+     * Учитываем три источника — так дата отражает весь собранный кэш:
+     *  - расписание выбранной группы (`sched_<группа>_ts`);
+     *  - расписание аудитории (`aud_<код>_ts`);
+     *  - индекс преподавателей (`teachers_*_ts`), из которого считается
+     *    расписание преподавателя — там своя, более давняя метка.
+     *
+     * Берём МАКСИМУМ, а не минимум: «обновлено 2 минуты назад» честнее, чем
+     * «5 дней назад» из-за одного старого куска кэша, который всё равно пригодится.
+     */
+    fun lastUpdatedAt(role: Role, entity: String): Long {
+        val candidates = when (role) {
+            Role.STUDENT -> listOf(prefs.getLong("sched_${entity}_ts", 0L))
+            Role.AUDIENCE -> listOfNotNull(
+                entity.trim().toIntOrNull()?.let { prefs.getLong("aud_${it}_ts", 0L) },
+                prefs.getLong("sched_${entity}_ts", 0L),
+            )
+            // Индекс преподавателей общий на всех (не по ФИО): TeacherIndex.build
+            // пишет его одним ключом KEY_LIST и одной меткой KEY_TS. Расписание
+            // преподавателя считается из кэша расписаний ГРУПП, поэтому датой
+            // обновления здесь честнее считать свежесть самого индекса.
+            Role.TEACHER -> listOf(
+                TeacherIndex.indexBuiltAt(this),
+                prefs.getLong("${KEY_AUD_IDX}_ts", 0L),
+            )
+        }
+        return candidates.filter { it > 0L }.maxOrNull() ?: 0L
+    }
+
+    /**
      * Список аудиторий. Кэш недельный: список меняется только при ремонте.
      */
     fun fetchAudiences(): List<Audience> {
