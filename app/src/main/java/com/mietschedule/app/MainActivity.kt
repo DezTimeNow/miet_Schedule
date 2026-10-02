@@ -194,6 +194,19 @@ fun AppRoot(
         scope.launch {
             refreshing = true
             refreshNote = "Обновляю…"
+            // Прогресс счётчика показываем отдельной корутиной на главном
+            // потоке. Сам обход идёт в withContext(Dispatchers.IO), где пишет
+            // в AtomicInteger, а надписью занимается только этот сборщик —
+            // раньше refreshNote менялся прямо из шести потоков пула.
+            val progress = java.util.concurrent.atomic.AtomicInteger(-1)
+            val totalGroups = java.util.concurrent.atomic.AtomicInteger(0)
+            val progressJob = launch {
+                while (true) {
+                    val n = progress.get()
+                    if (n >= 0) refreshNote = "Обновляю… $n из ${totalGroups.get()}"
+                    delay(300)
+                }
+            }
             val result = withContext(Dispatchers.IO) {
                 // Счётчик обновляется из пула потоков, поэтому атомарный:
                 // обычный `schedules++` из шести потоков терял инкременты, и
@@ -205,6 +218,7 @@ fun AppRoot(
                     // обновить вообще всё, а TTL в неделю прятал новые группы.
                     val groups = api.fetchGroups(force = true)
                     groupsN = groups.size
+                    totalGroups.set(groups.size)
                     // Расписания групп — единственный источник для аудитории и
                     // преподавателя, поэтому обновляем их ВСЕГДА.
                     val total = groups.size
@@ -224,10 +238,11 @@ fun AppRoot(
                                 runCatching { api.fetchSchedule(g) }
                                     .onSuccess { fresh[g] = it; schedules.incrementAndGet() }
                                     .onFailure { Log.w("Refresh", "Не обновили $g: ${it.message}") }
-                                val n = done.incrementAndGet()
-                                if (n % 20 == 0 || n == total) {
-                                    refreshNote = "Обновляю… $n из $total"
-                                }
+                                // Здесь только счётчики: refreshNote — Compose
+                                // State, и писать его из потоков пула нельзя
+                                // (запись вне главного потока). Надписью
+                                // занимается корутина-прогресс выше.
+                                progress.set(done.incrementAndGet())
                             }
                         })
                     } finally {
@@ -257,6 +272,7 @@ fun AppRoot(
                 }
                 schedules.get() to groupsN
             }
+            progressJob.cancel()
             // Сигнал экрану перечитать кэш. Без этого он показывал бы старое.
             dataGeneration++
             refreshNote = if (result.first > 0) {
@@ -682,12 +698,23 @@ fun ScheduleScreen(
     onChangeRole: () -> Unit,
     onOpenFavorites: () -> Unit = {}
 ) {
-    var lessons by remember { mutableStateOf<List<Lesson>>(emptyList()) }
-    var times by remember { mutableStateOf<List<PairTime>>(emptyList()) }
-    var semestr by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(true) }
-    var refreshing by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    // Данные и загрузка вынесены в rememberScheduleData (ScheduleData.kt):
+    // здесь остаётся только отрисовка. Раньше те же 190 строк загрузки
+    // стояли в теле экрана вместе с UI.
+    // Метка «Обновлено …». Объявлена до вызова rememberScheduleData: тот же
+    // экран читает значение здесь, а load() сообщает новую дату через
+    // onLoaded — раньше метка отставала от фактической записи в кэш.
+    var lastUpdated by remember { mutableStateOf(0L) }
+    val data = rememberScheduleData(api, role, group, teacherCode, roomName) { ts ->
+        lastUpdated = ts
+    }
+    val lessons = data.lessons
+    val times = data.times
+    val semestr = data.semestr
+    val loading = data.loading
+    val refreshing = data.refreshing
+    val error = data.error
+    val load = data.load
     // ─── СВЯЗКА «СЕГОДНЯ» И НЕДЕЛИ ───
     //
     // Фильтр «Сегодня» имеет смысл только на текущей неделе. Кнопки ‹ ›
@@ -706,7 +733,6 @@ fun ScheduleScreen(
     var showWeek by rememberSaveable { mutableStateOf(false) }
     // Метка «обновлено …» из кэша. Держим в state, а не читаем напрямую:
     // после нажатия «Обновить» значение должно смениться на глазах.
-    var lastUpdated by remember { mutableStateOf(0L) }
     var weekName by remember { mutableStateOf(WeekType.currentName()) }
     var weekRow by remember { mutableStateOf(WeekType.currentRowIndex()) }
     // Сдвиг учебной недели для кнопок «‹ неделя ›». 0 = текущая, +1 = следующая.
@@ -766,196 +792,6 @@ fun ScheduleScreen(
     LaunchedEffect(group, role) { refreshLastUpdated() }
 
 
-    fun apply(raw: String) {
-        val resp = GsonHolder.gson.fromJson(raw, ScheduleResponse::class.java)
-        lessons = resp.data ?: emptyList()
-        // Таблица времени: серверная, но с подстраховкой от самих пар — у части
-        // аудиторий сервер отдаёт пустой Times, и карточка осталась бы без времени.
-        times = mergeTimes(resp.times, lessons)
-        semestr = resp.semestr ?: ""
-    }
-
-    fun load(force: Boolean) {
-        scope.launch {
-            refreshing = true
-            error = null
-            when (role) {
-                Role.STUDENT -> {
-                    val cached = withContext(Dispatchers.IO) { api.cachedSchedule(group) }
-                    if (cached != null) runCatching { apply(cached) }
-                    if (force || lessons.isEmpty()) {
-                        // fetchSchedule больше НЕ пишет кэш сам — иначе 343
-                        // commit() посреди обновления съедали всё время. Здесь
-                        // одиночный запрос, пишем кэш явно и ровно один раз.
-                        runCatching {
-                            withContext(Dispatchers.IO) {
-                                api.fetchSchedule(group).also { api.cacheSchedule(group, it) }
-                            }
-                        }
-                            .onSuccess { raw -> runCatching { apply(raw) } }
-                            .onFailure {
-                                Log.w("Schedule", "Не получили $group", it)
-                                if (lessons.isEmpty()) error = "Не удалось загрузить расписание: ${it.message}"
-                            }
-                    }
-                }
-
-                Role.AUDIENCE -> {
-                    // Расписание аудитории собирается ДВУМЯ источниками:
-                    //   1) ответ сервера по `audience=<код>` — может быть ЧУЖИМ;
-                    //   2) сборка из кэша расписаний всех групп по ИМЕНИ комнаты —
-                    //      это наш источник, он всегда про 8307.
-                    //
-                    // ГЛАВНОЕ: сборка (2) выполняется ВСЕГДА, а не только когда
-                    // `lessons` пуст. Раньше она жила внутри
-                    // `if (force || lessons.isEmpty())`, но туда попадал
-                    // кэш `aud_*`, заполненный серверным ответом. Он непустой,
-                    // условие ложно, сборка не запускается — и экран показывал
-                    // 12 чужих пар из «8307 к» вместо 18 своих. Именно это и было
-                    // «8307 опять потеряла пары»: кнопка обновления писала в
-                    // `aud_*` серверный ответ, и следующий запуск сразу упирался
-                    // в непустой кэш.
-                    val code = teacherCode.toIntOrNull()
-                    if (code == null) {
-                        error = "Не удалось определить аудиторию"
-                    } else {
-                        val wantRoomKey = roomName.trim().takeIf { it.isNotEmpty() }?.let { roomKey(it) }
-
-                        // 1) Кэш ответа сервера — только как быстрый первый экран.
-                        val cached = withContext(Dispatchers.IO) { api.cachedAudience(code) }
-                        if (cached != null) {
-                            val parsed = runCatching {
-                                val r = GsonHolder.gson.fromJson(cached, ScheduleResponse::class.java)
-                                !r.data.isNullOrEmpty()
-                            }.getOrDefault(false)
-                            if (parsed) runCatching { apply(cached) }
-                        }
-
-                        // 2) Сеть по аудитории — только при явном обновлении.
-                        // Обновлять расписания групп здесь нельзя: всю сеть делает
-                        // refreshCurrent() параллельно и с пакетной записью.
-                        if (force) {
-                            Log.i("Schedule", "Аудитория $code: расписания уже обновлены кнопкой")
-                            runCatching { withContext(Dispatchers.IO) { api.fetchAudience(code) } }
-                                .onFailure { Log.w("Schedule", "Сервер не отдал аудиторию $code", it) }
-                        }
-
-                        // 3) СБОРКА ИЗ РАСПИСАНИЙ ГРУПП — всегда.
-                        //
-                        // Серверный ответ не выигрывает у неё НИКОГДА, потому что
-                        // для 8307 он отдаёт 12 строк из соседней «8307 к»
-                        // («Диагностика…», «Психология…», ПСИ-21М), а в самой 8307
-                        // в это время Информатика/ТЭ-26-13О. Замерено на живом
-                        // ответе: настоящих пар в 8307 — 18 в неделю (72 за
-                        // семестр), серверных — 12, и они не про 8307.
-                        //
-                        // Решение принимаем по вопросу «чья это аудитория», а не
-                        // «у кого больше строк»: при 12 против 12 побеждал сервер.
-                        // Если имя аудитории неизвестно (открыли из избранного,
-                        // где хранится только номер), roomKey("") не равен ни
-                        // одной комнате — тогда сравнивать нечем, и серверные
-                        // данные просто не принимаются, потому что доказанной
-                        // принадлежности у них нет.
-                        val groups = withContext(Dispatchers.IO) { api.cachedGroups() }
-                        if (groups.isEmpty()) {
-                            withContext(Dispatchers.IO) { api.fetchGroups() }
-                        }
-                        val local = withContext(Dispatchers.IO) {
-                            api.localLessonsOf(
-                                api.cachedGroups(), code,
-                                roomName.ifEmpty { group }
-                            )
-                        }
-                        Log.i("Schedule", "Аудитория $code: локально ${local.size} пар")
-
-                        val serverBelongs = wantRoomKey != null && lessons.isNotEmpty() &&
-                            lessons.all {
-                                val rn = it.room?.name?.trim().orEmpty()
-                                rn.isEmpty() || roomKey(rn) == wantRoomKey
-                            }
-                        val takeLocal = local.isNotEmpty() && !serverBelongs
-
-                        if (takeLocal) {
-                            lessons = local
-                            // Для аудиторий, которых нет на сайте (все 17 корпуса 8,
-                            // корпус 6, УВЦ, виртуальные), серверной таблицы Times
-                            // нет — время берём из самих пар.
-                            times = mergeTimes(null, local)
-                            semestr = "Осенний семестр"
-                            error = null
-                        } else if (lessons.isEmpty()) {
-                            error = "Расписание не найдено для $code"
-                        }
-                    }
-                }
-                Role.TEACHER -> {
-                    // Расписания преподавателя сервер не отдаёт: собираем из
-                    // кэша расписаний групп. Если кэша нет — сначала строим
-                    // индекс (это один проход по всем группам).
-                    var groups = withContext(Dispatchers.IO) { api.cachedGroups() }
-                    if (groups.isEmpty()) {
-                        // Сетевой вызов — только на Dispatchers.IO, иначе
-                        // NetworkOnMainThreadException.
-                        groups = try { withContext(Dispatchers.IO) { api.fetchGroups() } }
-                        catch (e: Exception) {
-                            Log.w("Schedule", "Список групп не получен", e)
-                            emptyList()
-                        }
-                    }
-                    if (groups.isEmpty()) {
-                        loading = false; refreshing = false
-                        error = "Список групп не загрузился — проверь интернет"
-                        return@launch
-                    }
-                    // ── Обновление по кнопке ──
-                    // Раньше здесь стоял только `lessonsOf` (чистый кэш), и
-                    // параметр `force` не читался ВООБЩЕ: препод нажимал
-                    // «Обновить», приложение перечитывало тот же кэш и
-                    // показывало «Обновлено: 3 дня назад» — то есть врало,
-                    // ничего не обновив. Теперь force реально ходит в сеть.
-                    if (force) {
-                        // Сначала дёшево: только его группы (10–30 сек). Если
-                        // их в кэше нет — падаем в полную пересборку индекса.
-                        val quick = withContext(Dispatchers.IO) {
-                            runCatching {
-                                TeacherIndex.refreshTeacher(api, groups, teacherCode)
-                            }.getOrElse {
-                                Log.w("Schedule", "Быстрое обновление не вышло", it); false
-                            }
-                        }
-                        if (!quick) {
-                            Log.i("Schedule", "Быстро не вышло — полная пересборка индекса")
-                            withContext(Dispatchers.IO) { TeacherIndex.build(api, groups) }
-                        }
-                    }
-                    var found = withContext(Dispatchers.IO) {
-                        TeacherIndex.lessonsOf(api, groups, teacherCode)
-                    }
-                    if (found.isEmpty()) {
-                        // Индекс мог устареть: преподаватель взял новую группу.
-                        withContext(Dispatchers.IO) { TeacherIndex.build(api, groups) }
-                        found = withContext(Dispatchers.IO) {
-                            TeacherIndex.lessonsOf(api, groups, teacherCode)
-                        }
-                    }
-                    lessons = found
-                    // Расписание преподавателя собирается из кэша расписаний
-                    // групп, где верхней таблицы Times нет. Без этого карточка
-                    // показывала номер пары, но не время начала и конца.
-                    times = mergeTimes(null, found)
-                    semestr = "Осенний семестр"
-                    if (found.isEmpty()) error = "Пар не найдено — проверь ФИО"
-                }
-            }
-            // Дату перечитываем ЗДЕСЬ, после всех веток ролей: метка в кэше
-            // пишется в момент успешной загрузки, и только после этого есть
-            // что показывать. Раньше пересчёт стоял в onClick до ответа сервера —
-            // это была гонка, и дата на экране оставалась старой.
-            withContext(Dispatchers.IO) { lastUpdated = api.lastUpdatedAt(role, group) }
-            loading = false
-            refreshing = false
-        }
-    }
 
     LaunchedEffect(group, teacherCode, role) { load(false) }
 
