@@ -1,6 +1,8 @@
 package com.mietschedule.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -555,5 +557,64 @@ class ScheduleParseTest {
             // старая формула называла день на один больше правильного
             assertEquals("cw=$cw", (верно + 1) % 7, старое)
         }
+    }
+
+    // ─────────────────────── обновления через GitHub ────────────────────────
+
+    /**
+     * Тег релиза приходит в разном виде: «v12», «12», «release-12», «v1.2.3».
+     * versionCode приложения — целое число, поэтому из тега достаём число.
+     */
+    @Test
+    fun `тег релиза разбирается в номер версии`() {
+        assertEquals(12, UpdateChecker.parseVersionCode("v12"))
+        assertEquals(12, UpdateChecker.parseVersionCode("V12"))
+        assertEquals(12, UpdateChecker.parseVersionCode("12"))
+        assertEquals(12, UpdateChecker.parseVersionCode("  v12  "))
+        assertEquals(3, UpdateChecker.parseVersionCode("release-3"))
+    }
+
+    @Test
+    fun `мусорный тег не превращается в версию`() {
+        // Нет числа — сравнивать не с чем. Показывать диалог с «vNaN» хуже,
+        // чем не показать его вовсе.
+        assertNull(UpdateChecker.parseVersionCode(null))
+        assertNull(UpdateChecker.parseVersionCode(""))
+        assertNull(UpdateChecker.parseVersionCode("latest"))
+        assertNull(UpdateChecker.parseVersionCode("без цифр"))
+    }
+
+    @Test
+    fun `новая версия определяется только когда она больше текущей`() {
+        val current = 12
+        assertTrue(UpdateChecker.parseVersionCode("v13")!! > current)
+        assertFalse(UpdateChecker.parseVersionCode("v12")!! > current)
+        assertFalse(UpdateChecker.parseVersionCode("v11")!! > current)
+        // Релиз старее установленной сборки диалог показывать нельзя —
+        // иначе предложишь «откатиться».
+        assertTrue(UpdateChecker.parseVersionCode("v12")!! >= current)
+        assertFalse(UpdateChecker.parseVersionCode("v11")!! >= current)
+    }
+
+    @Test
+    fun `размер релиза читается по-человечески`() {
+        val u = UpdateInfo(
+            versionCode = 13, tagName = "v13", title = "", notes = "",
+            apkName = "a.apk", downloadUrl = "http://x", sizeBytes = 17490783, sha256 = null,
+        )
+        assertEquals("16.7 МБ", u.sizeLabel)
+        assertEquals("v13", u.versionLabel)
+        // Размер неизвестен — подпись пустая, а не «0.0 МБ».
+        assertEquals("", u.copy(sizeBytes = 0L).sizeLabel)
+    }
+
+    @Test
+    fun `подпись последней проверки обновлений читается по-человочески`() {
+        assertEquals("Обновления ещё не проверялись", lastCheckLabel(0L))
+        val now = System.currentTimeMillis()
+        assertEquals("Обновления проверены только что", lastCheckLabel(now))
+        assertTrue(lastCheckLabel(now - 5 * 60_000).contains("5 мин"))
+        assertTrue(lastCheckLabel(now - 3 * 3_600_000).contains("3 ч"))
+        assertTrue(lastCheckLabel(now - 2 * 86_400_000L).contains("2 дн"))
     }
 }

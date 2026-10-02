@@ -63,6 +63,9 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = lightColorScheme(primary = MIET_BLUE)) {
                 Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F7FA)) {
                     AppRoot(requestedGroup = intent?.getStringExtra(EXTRA_GROUP))
+                // Проверка новой версии при запуске. Идёт в фоне: открытие
+                // приложения не ждёт сеть, диалог всплывёт позже, если есть.
+                UpdatePromptHost(currentVersionCode = BuildConfig.VERSION_CODE)
                 }
             }
         }

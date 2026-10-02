@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.sp
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(versionName: String, versionCode: Int, onBack: () -> Unit) {
+    val lastChecked = UpdateChecker.lastCheckedAt(LocalContext.current)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -128,8 +130,40 @@ fun AboutScreen(versionName: String, versionCode: Int, onBack: () -> Unit) {
                 "сохранено."
             )
 
+            AboutBlock(
+                "Обновления",
+                "При запуске приложение проверяет на GitHub, не вышел ли " +
+                "новый релиз, и само предлагает его скачать. Проверка идёт " +
+                "не чаще раза в 6 часов, чтобы не выжигать лимит запросов " +
+                "GitHub. Скачанный файл сверяется по контрольной сумме — " +
+                "битый или подменённый APK не установится."
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                lastCheckLabel(lastChecked),
+                fontSize = 12.sp,
+                color = Color(0xFF78909C),
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+/** «Проверено: сегодня в 14:32» / «Обновления ещё не проверялись». */
+internal fun lastCheckLabel(atMillis: Long): String {
+    if (atMillis <= 0L) return "Обновления ещё не проверялись"
+    val diff = System.currentTimeMillis() - atMillis
+    val mins = diff / 60_000
+    val hours = mins / 60
+    return when {
+        mins < 1 -> "Обновления проверены только что"
+        mins < 60 -> "Обновления проверены $mins мин назад"
+        hours < 24 -> "Обновления проверены $hours ч назад"
+        else -> "Обновления проверены ${hours / 24} дн назад"
     }
 }
 
