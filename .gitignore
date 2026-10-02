@@ -1,0 +1,27 @@
+# Сборки Android
+build/
+.gradle/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Локальное
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Кэши и ключи
+teacher-index.json
+/tmp-cache/
+*.log
+
+# Мои отладочные скрины и дампы — в репо не нужны
+*.png
+device_cache.xml
+device_prefs.xml
+screen*.xml
+ui.xml
