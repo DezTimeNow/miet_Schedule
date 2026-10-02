@@ -21,11 +21,11 @@ android {
         // Соглашение о номерах: сборка N соответствует релизу 0.N. Номер
         // после точки в теге GitHub обязан совпадать с versionCode, иначе
         // UpdateChecker перестаёт видеть обновления.
-        versionCode = 31
+        versionCode = 33
         // Пользователю показываем семантическую строку: пре-релиз помечен
         // суффиксом -alpha, как это делают в сторах. «О программе» выводит
         // её вместе с номером сборки.
-        versionName = "0.31.0-alpha"
+        versionName = "0.33.0-alpha"
     }
 
     buildTypes {
@@ -72,11 +72,11 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
 
-    // переживает перезагрузки и дозапуски, в отличие от AlarmManager/Handler.
-
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    // Сеть идёт через OkHttp напрямую (MietApi использует newCall + FormBody):
+    // у запросов к miet.ru свой User-Agent и формат application/x-www-form-urlencoded,
+    // а Retrofit поверх них всё равно не использовался. Зависимости на него и на
+    // converter-gson удалены как мёртвые — в коде не было ни одного обращения.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.google.code.gson:gson:2.11.0")
 
     testImplementation("junit:junit:4.13.2")

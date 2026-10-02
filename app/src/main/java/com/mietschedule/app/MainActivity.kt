@@ -3,6 +3,7 @@ package com.mietschedule.app
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material.icons.Icons
@@ -16,6 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,6 +93,16 @@ class MainActivity : ComponentActivity() {
  * Куда пользователь по выбору роли: сначала роль, потом своя сущность
  * (группа / преподаватель / аудитория), и только потом расписание.
  */
+private val RoleSaver = Saver<Role, String>(
+    save = { it.key },
+    restore = { key -> Role.fromKey(key) },
+)
+
+private val ScreenSaver = Saver<Screen, String>(
+    save = { it.name },
+    restore = { key -> Screen.entries.firstOrNull { it.name == key } ?: Screen.PICK_ROLE },
+)
+
 private enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, ABOUT }
 
 @Composable
@@ -101,17 +114,43 @@ fun AppRoot(
     val api = remember { MietApi(context) }
     val prefs = remember { GroupPrefs(context) }
 
-    // Роль живёт в хранилище: переживает перезапуск, иначе пришлось бы
-    // спрашивать её при каждом запуске.
-    var role by remember { mutableStateOf(prefs.role()) }
+    // СОСТОЯНИЕ ПРИ ПОВОРОТЕ ЭКРАНА. rememberSaveable переживает recreate
+    // Activity, обычный remember — нет: при повороте роль, выбранная группа
+    // и открытый экран возвращались к значениям из prefs. Роль и экран — enum,
+    // а rememberSaveable умеет сохранять только типы, поддерживаемые Bundle,
+    // поэтому для них заданы Saver (выше): наружу отдаётся строка.
+    var role by rememberSaveable(stateSaver = RoleSaver) { mutableStateOf(prefs.role()) }
     // Выбор в рамках роли. Для преподавателя храним ФИО, для аудитории — имя
     // (по имени проще искать в избранном), код аудитории добираем из списка.
     var teacherCode by remember { mutableStateOf("") }
     var roomNameArg by remember { mutableStateOf("") }
-    var selection by remember { mutableStateOf(requestedGroup ?: prefs.load()) }
+    var selection by rememberSaveable { mutableStateOf(requestedGroup ?: prefs.load()) }
 
-    var screen by remember {
-        mutableStateOf(if (prefs.load() != null || requestedGroup != null) Screen.PICK_ENTITY else Screen.PICK_ROLE)
+    // СТАРТОВЫЙ ЭКРАН. При сохранённой роли и группе открываем сразу
+    // расписание, а не экран выбора группы: группа уже выбрана и лежит
+    // в prefs, и каждый запуск требовал лишнего тапа по ней. Раньше здесь
+    // стояло PICK_ENTITY, из-за чего приложение открывалось на списке групп
+    // даже при готовом кэше (sched_ИВТ-11 в miet_cache.xml). Без сохранённого
+    // выбора — как и раньше, с экрана выбора роли.
+    var screen by rememberSaveable(stateSaver = ScreenSaver) {
+        mutableStateOf(
+            if (prefs.load() != null || requestedGroup != null) Screen.SCHEDULE else Screen.PICK_ROLE
+        )
+    }
+    // СИСТЕМНАЯ КНОПКА «НАЗАД». Проверено на эмуляторе: без этого перехвата
+    // Android завершал Activity на всех пяти экранах (focus уходил на launcher),
+    // потому что она была корнем стека. На экранах выбора группы и роли
+    // стрелки «‹» в шапке либо нет, либо она ведёт на тот же экран, то есть
+    // вернуться было нечем. Здесь те же переходы, что и у стрелки «‹».
+    // На экране роли перехват выключен: там назад — выход из приложения.
+    BackHandler(enabled = screen != Screen.PICK_ROLE) {
+        screen = when (screen) {
+            Screen.PICK_ENTITY -> Screen.PICK_ROLE
+            Screen.SCHEDULE -> Screen.PICK_ENTITY
+            Screen.FAVORITES -> if (selection != null) Screen.SCHEDULE else Screen.PICK_ROLE
+            Screen.ABOUT -> if (selection != null) Screen.PICK_ENTITY else Screen.PICK_ROLE
+            Screen.PICK_ROLE -> Screen.PICK_ROLE
+        }
     }
     // Кнопка «Обновить» есть на всех экранах, поэтому состояние живёт здесь и
     // передаётся вниз — иначе каждый экран вёл бы свой счётчик.
@@ -156,7 +195,10 @@ fun AppRoot(
             refreshing = true
             refreshNote = "Обновляю…"
             val result = withContext(Dispatchers.IO) {
-                var schedules = 0
+                // Счётчик обновляется из пула потоков, поэтому атомарный:
+                // обычный `schedules++` из шести потоков терял инкременты, и
+                // строка «Обновлено 287 из 343» показывала неверное число.
+                val schedules = java.util.concurrent.atomic.AtomicInteger(0)
                 var groupsN = 0
                 runCatching {
                     // Список групп — с сайта, кэш не берём: кнопка обещает
@@ -180,7 +222,7 @@ fun AppRoot(
                         pool.invokeAll(groups.map { g ->
                             java.util.concurrent.Callable {
                                 runCatching { api.fetchSchedule(g) }
-                                    .onSuccess { fresh[g] = it; schedules++ }
+                                    .onSuccess { fresh[g] = it; schedules.incrementAndGet() }
                                     .onFailure { Log.w("Refresh", "Не обновили $g: ${it.message}") }
                                 val n = done.incrementAndGet()
                                 if (n % 20 == 0 || n == total) {
@@ -209,11 +251,11 @@ fun AppRoot(
                     runCatching { TeacherIndex.buildFromCache(api, groups) }
                         .onSuccess { Log.i("Refresh", "Индекс преподавателей: $it") }
                         .onFailure { Log.w("Refresh", "Индекс преподавателей: ${it.message}") }
-                    Log.i("Refresh", "Готово: расписаний $schedules из $groupsN")
+                    Log.i("Refresh", "Готово: расписаний ${schedules.get()} из $groupsN")
                 }.onFailure {
                     Log.w("Refresh", "Обновление с ошибкой: ${it.message}")
                 }
-                schedules to groupsN
+                schedules.get() to groupsN
             }
             // Сигнал экрану перечитать кэш. Без этого он показывал бы старое.
             dataGeneration++
@@ -658,7 +700,10 @@ fun ScheduleScreen(
     // Обратно — нажатием на «Сегодня»: восстановить неделю 0 вручную
     // кнопкой «сейчас», потом переключить вкладку. Кнопка «Сегодня» —
     // единственное место, где showWeek задаётся напрямую.
-    var showWeek by remember { mutableStateOf(false) }
+    // Фильтр недели переживает поворот экрана: rememberSaveable вместо
+    // remember, иначе recreate Activity возвращал экран на «Сегодня» и
+    // сбрасывал выбранную учебную неделю на текущую.
+    var showWeek by rememberSaveable { mutableStateOf(false) }
     // Метка «обновлено …» из кэша. Держим в state, а не читаем напрямую:
     // после нажатия «Обновить» значение должно смениться на глазах.
     var lastUpdated by remember { mutableStateOf(0L) }
@@ -667,7 +712,7 @@ fun ScheduleScreen(
     // Сдвиг учебной недели для кнопок «‹ неделя ›». 0 = текущая, +1 = следующая.
     // Хранится именно сдвиг, а не абсолютный тип недели: при смене семестра
     // абсолютное значение устареет, а сдвиг 0 всегда означает «текущая».
-    var weekOffset by remember { mutableIntStateOf(0) }
+    var weekOffset by rememberSaveable { mutableIntStateOf(0) }
     // Начало семестра нужно и для пересчёта сдвига, иначе после смены семестра
     // weekRow уедет. Кэшируем один раз на запуск экрана.
     var semestrStartIso by remember { mutableStateOf(WeekType.SEMESTR_START_ISO) }
@@ -755,7 +800,7 @@ fun ScheduleScreen(
                     }
                 }
 
-Role.AUDIENCE -> {
+                Role.AUDIENCE -> {
                     // Расписание аудитории собирается ДВУМЯ источниками:
                     //   1) ответ сервера по `audience=<код>` — может быть ЧУЖИМ;
                     //   2) сборка из кэша расписаний всех групп по ИМЕНИ комнаты —

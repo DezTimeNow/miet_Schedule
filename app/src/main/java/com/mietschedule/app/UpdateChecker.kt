@@ -112,8 +112,11 @@ object UpdateChecker {
             http.newCall(
                 okhttp3.Request.Builder().url(update.downloadUrl).build()
             ).execute().use { resp ->
+                // Тело проверяется отдельно от статуса: 204 — успешный код,
+                // но тела нет, и `body!!` падал бы на нём.
+                val body = resp.body ?: error("Пустой ответ при скачивании")
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                resp.body!!.byteStream().use { it.copyTo(out) }
+                body.byteStream().use { it.copyTo(out) }
             }
         }
         update.sha256?.takeIf { it.isNotBlank() }?.let { expected ->
@@ -205,10 +208,14 @@ object UpdateChecker {
             .build()
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return null
-            val root = JsonParser.parseString(resp.body!!.string()).asJsonObject
+            val body = resp.body ?: return null
+            val root = JsonParser.parseString(body.string()).asJsonObject
             val tag = root.get("tag_name")?.asString
             val assets = root.getAsJsonArray("assets") ?: return null
             // Берём первый asset — это .apk. Релиз всегда с одним APK.
+            // Пустой массив тоже возможен (удалённый asset), поэтому длину
+            // проверяем, а не только null.
+            if (assets.size() == 0) return null
             val a = assets[0].asJsonObject
             val digest = a.get("digest")?.asString?.takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")
             return UpdateInfo(
