@@ -380,7 +380,12 @@ fun AppRoot(
                 teacherCode = ""
                 screen = Screen.PICK_ENTITY
             },
-            onBack = { screen = Screen.SCHEDULE },
+            // Раньше здесь стояло безусловное Screen.SCHEDULE. Но «Избранное»
+            // открывается и с экрана выбора роли, где selection == null, — а
+            // ветка SCHEDULE берёт group = selection!! и падала бы. Теперь
+            // переход тот же, что и в BackHandler: при пустом выборе идём
+            // на выбор роли.
+            onBack = { screen = if (selection != null) Screen.SCHEDULE else Screen.PICK_ROLE },
             onRefresh = { refreshCurrent() },
             onChangeRole = {
                 prefs.clear(); selection = null; teacherCode = ""; roomNameArg = ""
@@ -390,11 +395,16 @@ fun AppRoot(
             refreshNote = refreshNote,
         )
 
-        Screen.SCHEDULE -> ScheduleScreen(
+        // Расписание без выбранной сущности показывать нечем: экран взял бы
+        // пустую группу. Раньше здесь стояло selection!!, и любой путь,
+        // обнулявший выбор, приводил к падению. Теперь это тихий переход
+        // на выбор роли вместо исключения.
+        Screen.SCHEDULE -> ScheduleBody(
             api = api,
             prefs = prefs,
             role = role,
-            group = selection!!,
+            selection = selection,
+            onNoSelection = { screen = Screen.PICK_ROLE },
             teacherCode = teacherCode,
             roomName = roomNameArg,
             dataGeneration = dataGeneration,
@@ -413,6 +423,54 @@ fun AppRoot(
             }
         )
     }
+}
+
+/**
+ * Экран расписания с защитой от пустого выбора.
+ *
+ * Раньше AppRoot писал `group = selection!!`: если выбор оказывался пустым,
+ * приложение падало. Пустой выбор достижим — «Избранное» открывается и с
+ * экрана выбора роли, где ничего ещё не выбрано. Здесь вместо исключения
+ * тихий переход на экран выбора роли.
+ */
+@Composable
+private fun ScheduleBody(
+    api: MietApi,
+    prefs: GroupPrefs,
+    role: Role,
+    selection: String?,
+    onNoSelection: () -> Unit,
+    teacherCode: String,
+    roomName: String,
+    dataGeneration: Int,
+    onRefreshAll: () -> Unit,
+    refreshNote: String,
+    onChangeEntity: () -> Unit,
+    onChangeRole: () -> Unit,
+    onOpenFavorites: () -> Unit,
+) {
+    val group = selection
+    if (group == null) {
+        LaunchedEffect(Unit) { onNoSelection() }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    ScheduleScreen(
+        api = api,
+        prefs = prefs,
+        role = role,
+        group = group,
+        teacherCode = teacherCode,
+        roomName = roomName,
+        dataGeneration = dataGeneration,
+        onRefreshAll = onRefreshAll,
+        refreshNote = refreshNote,
+        onChangeEntity = onChangeEntity,
+        onChangeRole = onChangeRole,
+        onOpenFavorites = onOpenFavorites,
+    )
 }
 
 // ───────────────────── выбор группы: направление → группа ─────────────────────
