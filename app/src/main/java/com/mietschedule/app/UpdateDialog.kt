@@ -38,6 +38,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.snapshotFlow
+
+import androidx.compose.runtime.Stable
+
 
 /**
  * Диалог «Доступна новая версия».
@@ -49,6 +53,33 @@ import kotlinx.coroutines.launch
 
 /** Состояние диалога обновления. */
 enum class UpdateStage { IDLE, DOWNLOADING, ERROR }
+
+/**
+ * Мост между экраном «О программе» и диалогом обновления.
+ *
+ * Диалог рисует [UpdatePromptHost], который живёт уровнем выше (один на всё
+ * приложение, он же ловит фоновую проверку при запуске). Экран «О программе»
+ * не может обратиться к нему напрямую, поэтому передаёт найденное обновление
+ * через эту ручку, а хост подхватывает изменение.
+ *
+ * [pending] — обычное Compose-состояние, поэтому кнопка в «О программе» и
+ * хост видят одно и то же значение.
+ */
+@Stable
+class UpdateDialogHandle {
+    var pending by mutableStateOf<UpdateInfo?>(null)
+        internal set
+
+    /** Открыть окно обновления для найденного релиза. */
+    fun show(info: UpdateInfo) {
+        pending = info
+    }
+
+    /** Закрыть окно, если оно открыто. */
+    fun dismiss() {
+        pending = null
+    }
+}
 
 /**
  * Текст релиза приходит из GitHub как Markdown, где перевод строки — HTML-энтития
@@ -83,6 +114,12 @@ fun UpdatePromptHost(
     currentVersionCode: Int,
     enabled: Boolean = true,
     onUpdateInfo: (UpdateInfo?) -> Unit = {},
+    /**
+     * Диалог, который уже открыт снаружи (например, кнопкой «Проверить
+     * обновления» в экране «О программе»). Ссылка нужна, чтобы подставить
+     * найденное обновление в существующий диалог, а не открывать второй.
+     */
+    dialogHandle: UpdateDialogHandle? = null,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -91,6 +128,16 @@ fun UpdatePromptHost(
     var stage by remember { mutableStateOf(UpdateStage.IDLE) }
     var errorText by remember { mutableStateOf("") }
     var downloaded by remember { mutableStateOf(-1) }
+
+    // Диалог, открытый снаружи: снимаем ссылку только когда её закрыли,
+    // иначе приложение удержит старый UpdateInfo в памяти.
+    LaunchedEffect(dialogHandle) {
+        val handle = dialogHandle ?: return@LaunchedEffect
+        snapshotFlow { handle.pending }
+            .collect { info ->
+                if (info != null) update = info
+            }
+    }
 
     // Фоновая проверка при появлении экрана — один раз за composition.
     LaunchedEffect(enabled, currentVersionCode) {
@@ -102,8 +149,18 @@ fun UpdatePromptHost(
 
     val info = update ?: return
 
+    // Когда окно закрыто (любым способом) — обнуляем и ручку, иначе возврат на
+    // экран «О программе» снова подхватит то же обновление и покажет его.
+    fun closeDialog() {
+        update = null
+        stage = UpdateStage.IDLE
+        errorText = ""
+        downloaded = -1
+        dialogHandle?.dismiss()
+    }
+
     AlertDialog(
-        onDismissRequest = { if (stage == UpdateStage.IDLE) update = null },
+        onDismissRequest = { if (stage == UpdateStage.IDLE) closeDialog() },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -219,7 +276,7 @@ fun UpdatePromptHost(
                         // в этом случае бессмысленно — сначала разрешение.
                         Button(
                             onClick = {
-                                update = null
+                                closeDialog()
                                 ctx.startActivity(UpdateChecker.unknownSourcesSettings(ctx))
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MIET_BLUE),
@@ -236,7 +293,7 @@ fun UpdatePromptHost(
                                         UpdateChecker.downloadApk(ctx, info)
                                     }.onSuccess { apk ->
                                         ctx.startActivity(UpdateChecker.installIntent(ctx, apk))
-                                        update = null
+                                        closeDialog()
                                     }.onFailure { e ->
                                         errorText = e.message ?: "Неизвестная ошибка"
                                         stage = UpdateStage.ERROR
@@ -258,7 +315,7 @@ fun UpdatePromptHost(
                 TextButton(onClick = {
                     // «Позже» — не достаём до следующего релиза.
                     UpdateChecker.recordDismissed(ctx, info.versionCode)
-                    update = null
+                    closeDialog()
                 }) {
                     Text("Позже", color = Color(0xFF78909C))
                 }

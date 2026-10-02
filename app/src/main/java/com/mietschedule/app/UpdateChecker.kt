@@ -72,6 +72,33 @@ object UpdateChecker {
         info
     }
 
+    /**
+     * Проверка по кнопке «Проверить обновления»: без 6-часового кэша и без учёта
+     * отказа. Пользователь спросил — отвечаем честно, что на самом деле есть
+     * на GitHub, даже если он это обновление уже откладывал.
+     *
+     * [checkForUpdate] для фоновой проверки при запуске отличается: там кэш и
+     * отказ важны, чтобы не доставать диалогом. Здесь результат всегда свежий.
+     */
+    suspend fun checkNow(ctx: Context, currentVersionCode: Int): UpdateCheckResult =
+        withContext(Dispatchers.IO) {
+            prefs(ctx).edit().putLong(K_LAST_CHECK, System.currentTimeMillis()).apply()
+
+            val info = fetchLatest(API_LATEST)
+                ?: return@withContext UpdateCheckResult.Failed(
+                    "GitHub не ответил. Проверь интернет и попробуй ещё раз."
+                )
+            val latest = parseVersionCode(info.tagName)
+                ?: return@withContext UpdateCheckResult.Failed(
+                    "Не удалось разобрать номер версии из тега «${info.tagName}»."
+                )
+            if (latest <= currentVersionCode) {
+                UpdateCheckResult.UpToDate(latest)
+            } else {
+                UpdateCheckResult.Available(info)
+            }
+        }
+
     /** Скачивание APK релиза с проверкой sha256. Бросает исключение при несовпадении. */
     suspend fun downloadApk(ctx: Context, update: UpdateInfo): File = withContext(Dispatchers.IO) {
         // Кладём в cache/updates — этот путь объявлен в res/xml/file_paths.xml.
@@ -233,4 +260,25 @@ data class UpdateInfo(
             val tenths = (mb * 10 + 0.5).toInt()
             "${tenths / 10}.${tenths % 10} МБ"
         }
+}
+
+/**
+ * Итог проверки по кнопке «Проверить обновления» — в отличие от фоновой проверки,
+ * тут три честных исхода, а не один `null`:
+ *  - [UpdateCheckResult.Available] — релиз новее установленной сборки;
+ *  - [UpdateCheckResult.UpToDate] — релиз есть, но не новее нашей сборки;
+ *  - [UpdateCheckResult.Failed] — до GitHub не дошли (нет сети, 404, лимит).
+ *
+ * Раньше всё это сводилось к `null`, и по кнопке нельзя было понять: то ли
+ * обновлений правда нет, то ли GitHub не ответил, то ли пользователь сам
+ * откладывал. «Обновлений нет» и «не удалось проверить» — разные вещи, и
+ * врать пользователю тут нельзя.
+ */
+sealed interface UpdateCheckResult {
+    data class Available(val info: UpdateInfo) : UpdateCheckResult
+
+    /** [latestVersion] — какой релиз сейчас на GitHub (для честного сообщения). */
+    data class UpToDate(val latestVersion: Int) : UpdateCheckResult
+
+    data class Failed(val reason: String) : UpdateCheckResult
 }

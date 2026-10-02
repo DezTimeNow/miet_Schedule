@@ -12,12 +12,12 @@ android {
         applicationId = "com.mietschedule.app"
         minSdk = 24
         targetSdk = 35
-        // versionCode ВСЕГДА растёт. При versionCode = 15 Android считает все
+        // versionCode ВСЕГДА растёт. При versionCode = 17 Android считает все
         // сборки одной и той же версией: `adb install -r` может молча оставить
         // старую, а обновление из магазина не предложат вовсе. Из-за этого
         // «поставил новый APK — баг остался». Нумерация по сборкам обязана
         // быть в versionCode, а не только в имени файла.
-        versionCode = 15
+        versionCode = 17
         versionName = "1.0"
     }
 

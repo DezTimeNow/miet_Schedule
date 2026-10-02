@@ -60,12 +60,21 @@ class MainActivity : ComponentActivity() {
 
 
         setContent {
+            // Один диалог на всё приложение: его показывает и фоновая проверка
+            // при запуске, и кнопка «Проверить обновления» в «О программе».
+            val updateDialogHandle = remember { UpdateDialogHandle() }
             MaterialTheme(colorScheme = lightColorScheme(primary = MIET_BLUE)) {
                 Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F7FA)) {
-                    AppRoot(requestedGroup = intent?.getStringExtra(EXTRA_GROUP))
+                    AppRoot(
+                        requestedGroup = intent?.getStringExtra(EXTRA_GROUP),
+                        onUpdateFound = updateDialogHandle::show,
+                    )
                 // Проверка новой версии при запуске. Идёт в фоне: открытие
                 // приложения не ждёт сеть, диалог всплывёт позже, если есть.
-                UpdatePromptHost(currentVersionCode = BuildConfig.VERSION_CODE)
+                UpdatePromptHost(
+                    currentVersionCode = BuildConfig.VERSION_CODE,
+                    dialogHandle = updateDialogHandle,
+                )
                 }
             }
         }
@@ -79,7 +88,10 @@ class MainActivity : ComponentActivity() {
 private enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, ABOUT }
 
 @Composable
-fun AppRoot(requestedGroup: String? = null) {
+fun AppRoot(
+    requestedGroup: String? = null,
+    onUpdateFound: (UpdateInfo) -> Unit = {},
+) {
     val context = LocalContext.current
     val api = remember { MietApi(context) }
     val prefs = remember { GroupPrefs(context) }
@@ -193,7 +205,8 @@ fun AppRoot(requestedGroup: String? = null) {
         Screen.ABOUT -> AboutScreen(
             versionName = BuildConfig.VERSION_NAME,
             versionCode = BuildConfig.VERSION_CODE,
-            onBack = { screen = if (selection != null) Screen.PICK_ENTITY else Screen.PICK_ROLE }
+            onBack = { screen = if (selection != null) Screen.PICK_ENTITY else Screen.PICK_ROLE },
+            onUpdateFound = onUpdateFound,
         )
 
         Screen.FAVORITES -> FavoritesScreen(

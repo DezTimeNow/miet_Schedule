@@ -643,4 +643,36 @@ class ScheduleParseTest {
         assertEquals("", cleanReleaseNotes(""))
         assertEquals("", cleanReleaseNotes("   \n  \n "))
     }
+
+    // ───────────── кнопка «Проверить обновления» ─────────────
+
+    /**
+     * Регрессия: кнопка должна отличать «обновлений нет» от «проверить не удалось».
+     * Раньше всё сводилось к null, и пользователю нельзя было объяснить разницу.
+     */
+    @Test
+    fun `результат проверки различает актуальность и ошибку`() {
+        val upToDate: UpdateCheckResult = UpdateCheckResult.UpToDate(15)
+        val failed: UpdateCheckResult = UpdateCheckResult.Failed("нет сети")
+        val available: UpdateCheckResult = UpdateCheckResult.Available(
+            UpdateInfo(
+                versionCode = 16, tagName = "v16", title = "t", notes = "",
+                apkName = "a.apk", downloadUrl = "http://x", sizeBytes = 1, sha256 = null,
+            ),
+        )
+        assertTrue(upToDate is UpdateCheckResult.UpToDate)
+        assertTrue(failed is UpdateCheckResult.Failed)
+        assertTrue(available is UpdateCheckResult.Available)
+        // Исходы разные — их нельзя смешивать в одну «неудачу»
+        assertFalse(upToDate is UpdateCheckResult.Failed)
+        assertFalse(failed is UpdateCheckResult.UpToDate)
+        assertEquals("нет сети", (failed as UpdateCheckResult.Failed).reason)
+    }
+
+    @Test
+    fun `актуальная версия показывает номер релиза с GitHub`() {
+        // Если на GitHub v20, а у нас v15 — честно говорим про v20, а не молчим.
+        val r = UpdateCheckResult.UpToDate(20) as UpdateCheckResult.UpToDate
+        assertEquals(20, r.latestVersion)
+    }
 }

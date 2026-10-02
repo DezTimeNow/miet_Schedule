@@ -30,6 +30,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Button
+
+import androidx.compose.material3.ButtonDefaults
+
+import androidx.compose.material3.CircularProgressIndicator
+
+import androidx.compose.material.icons.filled.SystemUpdate
+
+import androidx.compose.runtime.mutableStateOf
+
+import androidx.compose.runtime.remember
+
+import androidx.compose.runtime.rememberCoroutineScope
+
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
 
 /**
  * Экран «О программе»: версия сборки и как приложение вообще работает.
@@ -41,8 +59,19 @@ import androidx.compose.ui.unit.sp
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(versionName: String, versionCode: Int, onBack: () -> Unit) {
-    val lastChecked = UpdateChecker.lastCheckedAt(LocalContext.current)
+fun AboutScreen(
+    versionName: String,
+    versionCode: Int,
+    onBack: () -> Unit,
+    onUpdateFound: (UpdateInfo) -> Unit = {},
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var checkMessage by remember { mutableStateOf<String?>(null) }
+    // Пересчитываем при возврате на экран: метка «проверено N мин назад» не
+    // должна застывать, пока пользователь читает про обновления.
+    val lastChecked = UpdateChecker.lastCheckedAt(ctx)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -139,7 +168,71 @@ fun AboutScreen(versionName: String, versionCode: Int, onBack: () -> Unit) {
                 "битый или подменённый APK не установится."
             )
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
+
+            // ───────── кнопка «Проверить обновления» ─────────
+            // Обновление самой проверки: кнопка спрашивает GitHub напрямую,
+            // минуя 6-часовой кэш, поэтому кнопка в шапке (перезагрузка
+            // расписания) тут не годится — это другое.
+            Button(
+                onClick = {
+                    if (checking) return@Button
+                    checking = true
+                    checkMessage = null
+                    scope.launch {
+                        val result = UpdateChecker.checkNow(ctx, versionCode)
+                        checking = false
+                        when (result) {
+                            is UpdateCheckResult.Available -> {
+                                checkMessage = "Доступна ${result.info.versionLabel}"
+                                onUpdateFound(result.info)
+                            }
+                            is UpdateCheckResult.UpToDate -> checkMessage =
+                                "Установлена свежая версия (на GitHub v${result.latestVersion})"
+                            is UpdateCheckResult.Failed -> checkMessage = result.reason
+                        }
+                    }
+                },
+                enabled = !checking,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MIET_BLUE,
+                    disabledContainerColor = Color(0xFFBBDEFB),
+                ),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                if (checking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(17.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White,
+                    )
+                } else {
+                    Icon(
+                        Icons.Filled.SystemUpdate,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (checking) "Проверяю…" else "Проверить обновления (v17)",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                )
+            }
+
+            checkMessage?.let { msg ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    msg,
+                    fontSize = 12.sp,
+                    color = Color(0xFF546E7A),
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
 
             Text(
                 lastCheckLabel(lastChecked),
