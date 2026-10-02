@@ -756,4 +756,213 @@ class ScheduleParseTest {
         assertEquals(friday, serverKeyForFriday)
         assertEquals("Пятница", DAY_NAMES[serverKeyForFriday])
     }
+
+    // ───── пара, разбитая на две подгруппы: 8307 и 8306 ─────
+
+    /**
+     * ЖИВОЙ ФИКСТУР: группа ТЭ-26-13О, аудитории 8307 и 8306 (miet.ru, 02.10.2026).
+     *
+     * Что здесь ломается — два РАЗНЫХ случая, и их легко спутать:
+     *
+     * 1) 8307: в одном слоте (вторник, 2-я пара) стоят ТРИ разных занятия
+     *    «Информатика» — Овчинникова и Власов, а в четверг снова Овчинникова
+     *    с другим Class.Code. Преподаватель, предмет, аудитория, группа могут
+     *    совпадать, различается ТОЛЬКО Class.Code. Старый ключ склеивал их
+     *    попарно: 12 строк превращались в 8.
+     *
+     * 2) четверг, 2-я пара: та же группа стоит в 8307 И в 8306 одновременно —
+     *    пара разделена на две подгруппы по разным аудиториям. Слот и Class.Code
+     *    у этих строк совпадают, различает только Room.
+     */
+    @Test
+    fun `пара на две подгруппы и два преподавателя в одной аудитории не склеиваются`() {
+        val l0 = Lesson(
+            day = 2,
+            dayNumber = 0,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "9DBBAFB27B91B4591578A3891B194F712B36F0CBEE15678D4D68DA20D7407A67", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l1 = Lesson(
+            day = 2,
+            dayNumber = 1,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "9DBBAFB27B91B4591578A3891B194F712B36F0CBEE15678D4D68DA20D7407A67", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l2 = Lesson(
+            day = 2,
+            dayNumber = 2,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "9DBBAFB27B91B4591578A3891B194F712B36F0CBEE15678D4D68DA20D7407A67", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l3 = Lesson(
+            day = 2,
+            dayNumber = 3,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "9DBBAFB27B91B4591578A3891B194F712B36F0CBEE15678D4D68DA20D7407A67", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l4 = Lesson(
+            day = 2,
+            dayNumber = 0,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "6B8D95458A7720DF6A458179C9727C60525215359DF9CC0BEB641279961B802B", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l5 = Lesson(
+            day = 2,
+            dayNumber = 1,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "6B8D95458A7720DF6A458179C9727C60525215359DF9CC0BEB641279961B802B", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l6 = Lesson(
+            day = 2,
+            dayNumber = 2,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "6B8D95458A7720DF6A458179C9727C60525215359DF9CC0BEB641279961B802B", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l7 = Lesson(
+            day = 2,
+            dayNumber = 3,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "6B8D95458A7720DF6A458179C9727C60525215359DF9CC0BEB641279961B802B", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l8 = Lesson(
+            day = 4,
+            dayNumber = 0,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "39EAD37387D6D7E842096A9A0F756B52FCC6F9F63E6A54C0787888689AA93CC2", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l9 = Lesson(
+            day = 4,
+            dayNumber = 1,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "39EAD37387D6D7E842096A9A0F756B52FCC6F9F63E6A54C0787888689AA93CC2", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l10 = Lesson(
+            day = 4,
+            dayNumber = 2,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "39EAD37387D6D7E842096A9A0F756B52FCC6F9F63E6A54C0787888689AA93CC2", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l11 = Lesson(
+            day = 4,
+            dayNumber = 3,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "39EAD37387D6D7E842096A9A0F756B52FCC6F9F63E6A54C0787888689AA93CC2", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8307")
+        )
+
+        val l12 = Lesson(
+            day = 4,
+            dayNumber = 0,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "758BC999BA85641FEB766DD2DFB671CB96E7D8EED2ED3AA2504CE644ADE60328", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8306")
+        )
+
+        val l13 = Lesson(
+            day = 4,
+            dayNumber = 1,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "758BC999BA85641FEB766DD2DFB671CB96E7D8EED2ED3AA2504CE644ADE60328", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8306")
+        )
+
+        val l14 = Lesson(
+            day = 4,
+            dayNumber = 2,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "758BC999BA85641FEB766DD2DFB671CB96E7D8EED2ED3AA2504CE644ADE60328", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8306")
+        )
+
+        val l15 = Lesson(
+            day = 4,
+            dayNumber = 3,
+            time = PairCode(code = 2),
+            classInfo = ClassInfo(code = "758BC999BA85641FEB766DD2DFB671CB96E7D8EED2ED3AA2504CE644ADE60328", name = "Информатика"),
+            group = GroupInfo(name = "ТЭ-26-13О"),
+            room = RoomInfo(name = "8306")
+        )
+
+        val all: List<Lesson> = listOf(
+            l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12, l13, l14, l15
+        )
+
+        // Фильтр по аудитории оставляет 12 строк 8307 и 4 строки 8306.
+        val r8307 = all.filter { it.room?.name == "8307" }
+        val r8306 = all.filter { it.room?.name == "8306" }
+        assertEquals(12, r8307.size)
+        assertEquals(4, r8306.size)
+
+        // Ключ обязан различать ВСЕ строки: в карте не должно схлопнуться ничего.
+        assertEquals(
+            "все 16 строк должны иметь разные ключи",
+            all.size,
+            all.map { roomLessonKey(it) }.toSet().size
+        )
+
+        // Регрессия №1: в 8307 ТРИ разных Class.Code — это три разных занятия.
+        // Вторник, 2-я пара, «Информатика»: Овчинникова (9DBB…) и Власов (6B8D…)
+        // одновременно; в четверг — Овчинникова (39EA…). Преподаватель, предмет,
+        // аудитория и группа у всех трёх совпадают, различает ТОЛЬКО Class.Code.
+        assertEquals(
+            "в 8307 три разных Class.Code",
+            3,
+            r8307.map { it.classInfo?.code }.toSet().size
+        )
+        // Прежний ключ (без Class.Code и без аудитории) терял здесь 4 пары.
+        val oldKey = { l: Lesson ->
+            "${l.day}|${l.dayNumber ?: 0}|${l.time?.code}|${l.classInfo?.name}|${l.group?.name}"
+        }
+        assertEquals(8, r8307.map { oldKey(it) }.toSet().size)
+
+        // Регрессия №2: 8306 и 8307 не должны делить ключи.
+        assertTrue(
+            "ключи 8307 и 8306 обязаны различаться",
+            r8307.map { roomLessonKey(it) }.toSet()
+                .intersect(r8306.map { roomLessonKey(it) }.toSet())
+                .isEmpty()
+        )
+
+        // Порядок не должен затирать: слот считается ровно один раз на строку.
+        val map = LinkedHashMap<String, Lesson>()
+        for (l in all) map[roomLessonKey(l)] = l
+        assertEquals(16, map.size)
+    }
 }
