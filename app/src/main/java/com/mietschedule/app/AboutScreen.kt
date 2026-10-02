@@ -66,6 +66,7 @@ fun AboutScreen(
     onBack: () -> Unit,
     onUpdateFound: (UpdateInfo) -> Unit = {},
     onRefresh: () -> Unit = {},
+    onChangeRole: () -> Unit = {},
     refreshing: Boolean = false,
     refreshNote: String = "",
 ) {
@@ -102,8 +103,14 @@ fun AboutScreen(
                             Icons.Filled.Refresh,
                             contentDescription = "Обновить всё",
                             tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(24.dp)
                         )
+                    }
+                    // «Роль» стоит справа от обновления на КАЖДОМ экране: пока
+                    // его нет, иконка обновления прыгала с 881 на 1007 — то
+                    // есть «одно и то же место» на самом деле не выполнялось.
+                    androidx.compose.material3.TextButton(onClick = onChangeRole) {
+                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
                     }
                 }
             )

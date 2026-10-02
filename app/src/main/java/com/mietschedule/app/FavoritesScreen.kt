@@ -24,6 +24,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -55,6 +56,7 @@ fun FavoritesScreen(
     onOpen: (Role, String) -> Unit,
     onBack: () -> Unit,
     onRefresh: () -> Unit = {},
+    onChangeRole: () -> Unit = {},
     refreshing: Boolean = false,
     refreshNote: String = ""
 ) {
@@ -107,8 +109,11 @@ fun FavoritesScreen(
                             Icons.Filled.Refresh,
                             contentDescription = "Обновить всё",
                             tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(24.dp)
                         )
+                    }
+                    TextButton(onClick = onChangeRole) {
+                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
                     }
                 }
             )

@@ -33,6 +33,7 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.CircularProgressIndicator
 
 internal val MIET_BLUE = Color(0xFF0057B8)
@@ -228,6 +229,7 @@ fun AppRoot(
         Screen.PICK_ROLE -> RolePickerScreen(
             current = if (prefs.load() != null) role else null,
             onRefresh = { refreshCurrent() },
+            onChangeRole = { screen = Screen.PICK_ROLE },
             refreshNote = refreshNote,
             onAbout = { screen = Screen.ABOUT },
             refreshing = refreshing,
@@ -280,7 +282,8 @@ fun AppRoot(
                     },
                     onBack = { screen = Screen.PICK_ROLE },
                     onRefresh = { refreshCurrent() },
-            refreshNote = refreshNote,
+                    onChangeRole = { screen = Screen.PICK_ROLE },
+                    refreshNote = refreshNote,
                     onAbout = { screen = Screen.ABOUT },
                     refreshing = refreshing
                 )
@@ -293,6 +296,10 @@ fun AppRoot(
             onBack = { screen = if (selection != null) Screen.PICK_ENTITY else Screen.PICK_ROLE },
             onUpdateFound = onUpdateFound,
             onRefresh = { refreshCurrent() },
+            onChangeRole = {
+                prefs.clear(); selection = null; teacherCode = ""; roomNameArg = ""
+                screen = Screen.PICK_ROLE
+            },
             refreshing = refreshing,
             refreshNote = refreshNote,
         )
@@ -307,6 +314,10 @@ fun AppRoot(
             },
             onBack = { screen = Screen.SCHEDULE },
             onRefresh = { refreshCurrent() },
+            onChangeRole = {
+                prefs.clear(); selection = null; teacherCode = ""; roomNameArg = ""
+                screen = Screen.PICK_ROLE
+            },
             refreshing = refreshing,
             refreshNote = refreshNote,
         )
@@ -730,19 +741,28 @@ fun ScheduleScreen(
                     }
                 }
 
-                Role.AUDIENCE -> {
-                    // В расписании аудитории сервер отдаёт сетку занятости:
-                    // в каждой паре Class = кто придёт, Group = чья это группа.
+Role.AUDIENCE -> {
+                    // Расписание аудитории собирается ДВУМЯ источниками:
+                    //   1) ответ сервера по `audience=<код>` — может быть ЧУЖИМ;
+                    //   2) сборка из кэша расписаний всех групп по ИМЕНИ комнаты —
+                    //      это наш источник, он всегда про 8307.
+                    //
+                    // ГЛАВНОЕ: сборка (2) выполняется ВСЕГДА, а не только когда
+                    // `lessons` пуст. Раньше она жила внутри
+                    // `if (force || lessons.isEmpty())`, но туда попадал
+                    // кэш `aud_*`, заполненный серверным ответом. Он непустой,
+                    // условие ложно, сборка не запускается — и экран показывал
+                    // 12 чужих пар из «8307 к» вместо 18 своих. Именно это и было
+                    // «8307 опять потеряла пары»: кнопка обновления писала в
+                    // `aud_*` серверный ответ, и следующий запуск сразу упирался
+                    // в непустой кэш.
                     val code = teacherCode.toIntOrNull()
                     if (code == null) {
                         error = "Не удалось определить аудиторию"
                     } else {
-                        // Кэш аудитории берём ТОЛЬКО если он непустой. Старые
-                        // сборки клали туда ответ сервера «Data: []», и такой
-                        // кэш годами выглядит как «расписание есть, но пустое»:
-                        // apply() подставляет его, lessons непустой, и сборка из
-                        // кэша расписаний групп не запускается. Именно так у
-                        // 8307 показывалось 12 чужих пар вместо 72 своих.
+                        val wantRoomKey = roomName.trim().takeIf { it.isNotEmpty() }?.let { roomKey(it) }
+
+                        // 1) Кэш ответа сервера — только как быстрый первый экран.
                         val cached = withContext(Dispatchers.IO) { api.cachedAudience(code) }
                         if (cached != null) {
                             val parsed = runCatching {
@@ -752,97 +772,63 @@ fun ScheduleScreen(
                             if (parsed) runCatching { apply(cached) }
                         }
 
-                        if (force || lessons.isEmpty()) {
-                            // Кнопка «Обновить» на экране аудитории должна
-                            // обновлять ТО, из чего на самом деле строится экран, —
-                            // расписания ГРУПП. Раньше тут ходили только за ответом
-                            // по самой аудитории, а он для 8307 отдаёт чужие 12 строк
-                            // из «8307 к»: кнопка нажималась, карточки не менялись.
-                            // Обновлять расписания групп здесь НЕЛЬЗЯ.
-                            //
-                            // Раньше этот блок при force заново обходил все группы
-                            // СЕГУЕНТНО (for по списку), и обновление аудитории
-                            // превращалось в второй полный проход по 343 группам
-                            // после «обновления». Теперь всю сеть делает
-                            // refreshCurrent() — параллельно и с пакетной
-                            // записью, — а load() только пересобирает экран
-                            // из уже обновлённого кэша.
-                            if (force) Log.i("Schedule", "Аудитория $code: расписания уже обновлены кнопкой")
-                            val got = runCatching {
-                                withContext(Dispatchers.IO) { api.fetchAudience(code) }
-                            }.onSuccess { raw -> runCatching { apply(raw) } }
-                                .onFailure {
-                                    Log.w("Schedule", "Сервер не отдал аудиторию $code", it)
-                                }.isSuccess
+                        // 2) Сеть по аудитории — только при явном обновлении.
+                        // Обновлять расписания групп здесь нельзя: всю сеть делает
+                        // refreshCurrent() параллельно и с пакетной записью.
+                        if (force) {
+                            Log.i("Schedule", "Аудитория $code: расписания уже обновлены кнопкой")
+                            runCatching { withContext(Dispatchers.IO) { api.fetchAudience(code) } }
+                                .onFailure { Log.w("Schedule", "Сервер не отдал аудиторию $code", it) }
+                        }
 
-                            // СЕРВЕРНЫЕ ДАННЫЕ ДЛЯ АУДИТОРИИ МОГУТ БЫТЬ ЧУЖИМИ.
-                            //
-                            // 8307 = 12 строк, и ВСЕ ДВЕНАДЦАТЬ из комнаты «8307 к» —
-                            // соседней. Там «Диагностика профессиональной
-                            // пригодности» и «Психология и педагогика», группа ПСИ-21М,
-                            // а в самой 8307 в это время Информатика/ТЭ-26-13О. Замерено
-                            // на живом ответе: настоящих пар в 8307 — 18 в неделю
-                            // (72 за семестр), серверных — 12, и они не про 8307.
-                            //
-                            // Поэтому ответ сервера по аудитории НИКОГДА не выигрывает
-                            // у сборки из расписаний групп: сверяем не «больше ли строк»,
-                            // а чья это аудитория на самом деле. Раньше условие было
-                            // `local.size > lessons.size`, и при 12 против 12 чужих
-                            // выигрывал сервер — отсюда «одна пара вместо 18».
-                            // Сравнивать нечем, если имя аудитории неизвестно (например
-                            // открыли из избранного, где хранится только номер).
-                            // roomKey("") не равен ни одной комнате, и без этой
-                            // проверки ВСЕ серверные ответы объявлялись бы чужими.
-                            val wantRoomKey = roomName.trim().takeIf { it.isNotEmpty() }?.let { roomKey(it) }
-                            val serverIsForeign = wantRoomKey != null && lessons.any {
+                        // 3) СБОРКА ИЗ РАСПИСАНИЙ ГРУПП — всегда.
+                        //
+                        // Серверный ответ не выигрывает у неё НИКОГДА, потому что
+                        // для 8307 он отдаёт 12 строк из соседней «8307 к»
+                        // («Диагностика…», «Психология…», ПСИ-21М), а в самой 8307
+                        // в это время Информатика/ТЭ-26-13О. Замерено на живом
+                        // ответе: настоящих пар в 8307 — 18 в неделю (72 за
+                        // семестр), серверных — 12, и они не про 8307.
+                        //
+                        // Решение принимаем по вопросу «чья это аудитория», а не
+                        // «у кого больше строк»: при 12 против 12 побеждал сервер.
+                        // Если имя аудитории неизвестно (открыли из избранного,
+                        // где хранится только номер), roomKey("") не равен ни
+                        // одной комнате — тогда сравнивать нечем, и серверные
+                        // данные просто не принимаются, потому что доказанной
+                        // принадлежности у них нет.
+                        val groups = withContext(Dispatchers.IO) { api.cachedGroups() }
+                        if (groups.isEmpty()) {
+                            withContext(Dispatchers.IO) { api.fetchGroups() }
+                        }
+                        val local = withContext(Dispatchers.IO) {
+                            api.localLessonsOf(
+                                api.cachedGroups(), code,
+                                roomName.ifEmpty { group }
+                            )
+                        }
+                        Log.i("Schedule", "Аудитория $code: локально ${local.size} пар")
+
+                        val serverBelongs = wantRoomKey != null && lessons.isNotEmpty() &&
+                            lessons.all {
                                 val rn = it.room?.name?.trim().orEmpty()
-                                rn.isNotEmpty() && roomKey(rn) != wantRoomKey
+                                rn.isEmpty() || roomKey(rn) == wantRoomKey
                             }
+                        val takeLocal = local.isNotEmpty() && !serverBelongs
 
-                            // Сервер знает только 136 из 221 аудитории. Для остальных
-                            // (все 17 корпуса 8, корпус 6, УВЦ, виртуальные и
-                            // аудитории практики) он отдаёт пустой ответ — тогда
-                            // собираем занятость из кэша расписаний групп ПО ИМЕНИ.
-                            // Условие — именно lessons.isEmpty(), а не «!got»:
-                            // пустой успешный ответ сервера тоже должен вести
-                            // к локальной сборке, а не останавливаться на нём.
-                            if (!got || lessons.isEmpty()) {
-                                val groups = withContext(Dispatchers.IO) { api.cachedGroups() }
-                                if (groups.isEmpty()) {
-                                    withContext(Dispatchers.IO) { api.fetchGroups() }
-                                }
-                                val local = withContext(Dispatchers.IO) {
-                                    api.localLessonsOf(
-                                        api.cachedGroups(), code,
-                                        roomName.ifEmpty { group }
-                                    )
-                                }
-                                Log.i("Schedule", "Аудитория $code: локально ${local.size} пар")
-                                // Выбираем НЕ по «у кого больше строк», а по тому,
-                                // ЧЬЯ это аудитория. При 12 серверных и 12 собранных
-                                // из групп побеждал сервер — а это были чужие пары из
-                                // «8307 к», и в неделю 1-го числителя оттуда
-                                // оставалась ровно одна. Свои пары — всегда своя
-                                // аудитория по определению, поэтому побеждают они
-                                // независимо от количества.
-                                val takeLocal = local.isNotEmpty() &&
-                                    (serverIsForeign || local.size > lessons.size)
-                                if (takeLocal) {
-                                    lessons = local
-                                    // Аудитории, которых нет на сайте, собираются
-                                    // из кэша расписаний групп: серверной таблицы
-                                    // Times для них нет, время берём из самих пар.
-                                    times = mergeTimes(null, local)
-                                    semestr = "Осенний семестр"
-                                    error = null
-                                } else if (lessons.isEmpty()) {
-                                    error = "Расписание не найдено для $code"
-                                }
-                            }
+                        if (takeLocal) {
+                            lessons = local
+                            // Для аудиторий, которых нет на сайте (все 17 корпуса 8,
+                            // корпус 6, УВЦ, виртуальные), серверной таблицы Times
+                            // нет — время берём из самих пар.
+                            times = mergeTimes(null, local)
+                            semestr = "Осенний семестр"
+                            error = null
+                        } else if (lessons.isEmpty()) {
+                            error = "Расписание не найдено для $code"
                         }
                     }
                 }
-
                 Role.TEACHER -> {
                     // Расписания преподавателя сервер не отдаёт: собираем из
                     // кэша расписаний групп. Если кэша нет — сначала строим
@@ -951,6 +937,17 @@ fun ScheduleScreen(
     val activeWeekRow = remember(weekOffset, semestrStartIso) {
         WeekType.shiftedRow(weekOffset, semestrStartIso)
     }
+
+    // Диапазон дат выбранной недели: «29.09 — 05.10».
+    fun weekRangeLabel(): String {
+        val mon = WeekType.dateOfWeekDay(weekOffset, 0, semestrStartIso)
+            ?: return WeekType.name(activeWeekRow)
+        val sun = WeekType.dateOfWeekDay(weekOffset, 6, semestrStartIso) ?: return ""
+        fun f(d: java.util.Calendar) =
+            String.format("%02d.%02d", d.get(java.util.Calendar.DAY_OF_MONTH), d.get(java.util.Calendar.MONTH) + 1)
+        return "${f(mon)} \u2014 ${f(sun)}"
+    }
+
     val weekLessons = remember(lessons, activeWeekRow) {
         lessons.filter { (it.dayNumber ?: 0) == activeWeekRow }
     }
@@ -968,7 +965,16 @@ fun ScheduleScreen(
     // Теперь приводим к нашей шкале 0..6 сразу при группировке, а в шапке
     // берём DAY_NAMES[day] без «-1».
     val byDay = weekLessons.groupBy { (it.day ?: 1) - 1 }.toSortedMap()
-    val todayLessons = byDay[todayDay].orEmpty()
+    // «Сегодня» имеет смысл ТОЛЬКО на текущей неделе.
+    //
+    // Кнопки ‹ › листают учебную неделю, но todayDay остаётся пятницей
+    // навсегда. Из-за этого на следующей неделе подсвечивалась пятница
+    // 09.10 и писалось «— сегодня», хотя сейчас всё ещё 02.10. При сдвиге
+    // показываем обычную неделю без подсветки, а вкладка называется не
+    // «Сегодня», а по дате выбранной недели.
+    val isCurrentWeek = weekOffset == 0
+    val markedDay = if (isCurrentWeek) todayDay else -1
+    val todayLessons = if (isCurrentWeek) byDay[todayDay].orEmpty() else emptyList()
 
     Scaffold(
         topBar = {
@@ -982,54 +988,25 @@ fun ScheduleScreen(
                                 append(role.title.removePrefix("Я "))
                                 append(" • ")
                                 append(if (semestr.isBlank()) "Загрузка…" else semestr)
-                                append(" • ")
-                                // Сдвинутая неделя видна в самом заголовке, а не
-                                // только в подписи снизу: иначе непонятно, что
-                                // нажали именно на «следующую неделю».
-                                append(
-                                    if (weekOffset == 0) weekName
-                                    else "${WeekType.shiftedName(weekOffset, semestrStartIso)} · ${if (weekOffset > 0) "+" else ""}$weekOffset"
-                                )
                             },
                             color = Color(0xFFBBDEFB), fontSize = 12.sp
                         )
                     }
                 },
                 actions = {
-                    // Кнопка обновления — ПЕРВОЙ в шапке и на КАЖДОМ экране.
-                    // Просьба: «где бы я ни находился, обновлялось всё».
-                    // Показывает прогресс, потому что 344 группы — это ~35 секунд,
-                    // и молчащее ожидание выглядит как зависание.
-                    // Переключатель учебной недели. Тип недели ходит по кругу
-                    // 0..3, поэтому «следующая» — это +1 по модулю 4, а не
-                    // следующая календарная: кнопка показывает расписание той
-                    // недели, которая будет через неделю, а не «ту же неделю
-                    // с другого дня». Работает без сети — данные уже в кэше.
-                    IconButton(
-                        onClick = { weekOffset-- },
-                        enabled = weekOffset > -4
-                    ) {
-                        Text("\u2039", color = Color.White, fontSize = 22.sp)
-                    }
-                    IconButton(
-                        onClick = { weekOffset++ },
-                        enabled = weekOffset < 4
-                    ) {
-                        Text("\u203A", color = Color.White, fontSize = 22.sp)
-                    }
-                    // «К текущей неделе» — только когда ушли со сдвига, чтобы не
-                    // занимать место в шапке лишней кнопкой.
+                    // В ШАПКЕ РОВНО ДВЕ КНОПКИ: обновление и «Роль».
                     //
-                    // ВАЖНО: кнопка стоит ПОСЛЕ «›», а не перед «Обновить».
-                    // Иначе при первом же нажатии «›» она появлялась в шапке и
-                    // сдвигала «›» влево — второе нажатие попадало уже в неё и
-                    // сбрасывало неделю вместо перехода. Проверено на устройстве:
-                    // 1-й числитель → 1-й знаменатель → снова 1-й числитель.
-                    if (weekOffset != 0) {
-                        IconButton(onClick = { weekOffset = 0 }) {
-                            Text("•", color = Color(0xFFBBDEFB), fontSize = 20.sp)
-                        }
-                    }
+                    // Раньше здесь стояло восемь элементов (‹ › • ⭯ ☆ Избранное
+                    // Сменить Роль) — они физически не влезали, ломались и
+                    // выглядели свалкой. Переключатель недели ушёл на
+                    // отдельную строку под шапкой, звезда и «Избранное» — в
+                    // строку вкладок.
+                    //
+                    // Обновление — ПЕРВОЕ справа и на ОДНОМ И ТОМ ЖЕ месте на
+                    // всех семи экранах: просьба «где бы я ни находился,
+                    // обновлялось всё». Показывает прогресс, потому что 343
+                    // группы — это ~50 секунд, и молчащее ожидание читается
+                    // как зависание.
                     IconButton(onClick = onRefreshAll, enabled = !refreshing) {
                         if (refreshing) CircularProgressIndicator(
                             Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
@@ -1037,28 +1014,8 @@ fun ScheduleScreen(
                             Icons.Filled.Refresh,
                             contentDescription = "Обновить всё",
                             tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(24.dp)
                         )
-                    }
-                    IconButton(onClick = { prefs.toggleFavFor(role, group); refreshFav() }) {
-                        Text(
-                            if (isFav) "★" else "☆",
-                            color = if (isFav) Color(0xFFFFD54F) else Color.White,
-                            fontSize = 21.sp
-                        )
-                    }
-                    // Список избранного: раньше до него надо было доходить через
-                    // экран выбора, теперь он открывается отсюда.
-                    IconButton(onClick = onOpenFavorites) {
-                        Icon(
-                            Icons.Filled.List,
-                            contentDescription = "Избранное",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    TextButton(onClick = { onChangeEntity() }) {
-                        Text("Сменить", color = Color.White, fontSize = 13.sp)
                     }
                     TextButton(onClick = { onChangeRole() }) {
                         Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
@@ -1093,6 +1050,49 @@ fun ScheduleScreen(
                 }
             }
 
+            // ─── строка учебной недели ───
+            //
+            // Раньше переключатель недели жил в шапке вместе с шестью другими
+            // кнопками и не влезал. Здесь ему место: слева «‹», по центру —
+            // семестр, тип недели и дата понедельника, справа «›» и сброс.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { weekOffset-- },
+                    enabled = weekOffset > -4
+                ) {
+                    Text("\u2039", color = MIET_BLUE, fontSize = 22.sp)
+                }
+                Text(
+                    buildString {
+                        if (semestr.isNotBlank()) { append(semestr); append(" • ") }
+                        append(WeekType.name(activeWeekRow))
+                        append(" • ")
+                        append(weekRangeLabel())
+                    },
+                    fontSize = 13.sp,
+                    color = MIET_BLUE,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                IconButton(
+                    onClick = { weekOffset++ },
+                    enabled = weekOffset < 4
+                ) {
+                    Text("\u203A", color = MIET_BLUE, fontSize = 22.sp)
+                }
+                // Сброс на текущую неделю — только когда со сдвига. Стоит
+                // ПОСЛЕ «›»: иначе при первом нажатии «›» он появлялся и
+                // сдвигал «›» влево, и второе нажатие попадало уже в него.
+                if (weekOffset != 0) {
+                    TextButton(onClick = { weekOffset = 0 }) {
+                        Text("сейчас", fontSize = 12.sp, color = MIET_BLUE)
+                    }
+                }
+            }
+
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1104,8 +1104,14 @@ fun ScheduleScreen(
                     // заблуждение, поэтому подпись становится «Пт 02.10».
                     label = {
                         Text(
-                            if (todayDay == 0) "Вс (выходной)"
-                            else "Сегодня: ${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}",
+                            // На сдвинутой неделе слово «Сегодня» вводит в
+                            // заблуждение: сегодня всё ещё 02.10, а тут уже
+                            // 09.10. Поэтому подпись становится датой недели.
+                            when {
+                                !isCurrentWeek -> "${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}"
+                                todayDay == 0 -> "Вс (выходной)"
+                                else -> "Сегодня: ${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}"
+                            },
                             fontSize = 13.sp
                         )
                     }
@@ -1115,12 +1121,36 @@ fun ScheduleScreen(
                     onClick = { showWeek = true },
                     label = { Text("Вся неделя", fontSize = 13.sp) }
                 )
-                // Раньше здесь стоял третий дубль кнопки — IconButton с глифом «↻».
-                // Вместе с иконкой внутри TextButton («Обновить») у студента было
-                // ТРИ кнопки обновления на одном экране, из них одна просто
-                // непонятная стрелочка. По просьбе оставлена одна — с надписью,
-                // она стоит строкой выше и при нажатии показывает «Обновляю…».
                 Spacer(Modifier.weight(1f))
+                // Звезда и список избранного ушли сюда из шапки: там было
+                // слишком тесно, а здесь им не мешают вкладки.
+                TextButton(onClick = { prefs.toggleFavFor(role, group); refreshFav() }) {
+                    Text(
+                        if (isFav) "★" else "☆",
+                        color = if (isFav) Color(0xFFE65100) else Color(0xFF78909C),
+                        fontSize = 19.sp
+                    )
+                }
+                // Иконки вместо надписей: на экране 1080px строка с двумя
+                // вкладками, звездой и двумя словами «Избранное»/«Сменить»
+                // не помещалась — правые кнопки просто обрезались. Две иконки
+                // занимают 96px вместо ~340.
+                IconButton(onClick = onOpenFavorites) {
+                    Icon(
+                        Icons.Filled.List,
+                        contentDescription = "Избранное",
+                        tint = Color(0xFF78909C),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = { onChangeEntity() }) {
+                    Icon(
+                        Icons.Filled.Edit,
+                        contentDescription = "Сменить группу или аудиторию",
+                        tint = Color(0xFF78909C),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
 
             if (error != null) {
@@ -1139,8 +1169,11 @@ fun ScheduleScreen(
                     Box(Modifier.fillMaxSize(), Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                if (todayDay == 0) "Воскресенье — выходной"
-                                else "Сегодня ${WeekType.dayWithDate(todayDay, weekOffset, semestrStartIso).lowercase()} пар нет",
+                                when {
+                                    !isCurrentWeek -> "${WeekType.dayWithDate(todayDay, weekOffset, semestrStartIso)} пар нет"
+                                    todayDay == 0 -> "Воскресенье — выходной"
+                                    else -> "Сегодня ${WeekType.dayWithDate(todayDay, weekOffset, semestrStartIso).lowercase()} пар нет"
+                                },
                                 fontSize = 16.sp, color = Color.Gray
                             )
                             Spacer(Modifier.height(4.dp))
@@ -1161,7 +1194,9 @@ fun ScheduleScreen(
                         // Форму числительного: 1 пара, 2 пары, 5 пар. Раньше стояло
                         // жёсткое «пар», и на экране аудитории читалось «1 пар».
                         if (showWeek) "$count ${plural(count, "пара", "пары", "пар")} • ${WeekType.name(activeWeekRow)}"
-                        else "$count ${plural(count, "пара", "пары", "пар")} сегодня • ${WeekType.name(activeWeekRow)}",
+                        else "$count ${plural(count, "пара", "пары", "пар")}" +
+                            (if (isCurrentWeek) " сегодня" else "") +
+                            " • ${WeekType.name(activeWeekRow)}",
                         fontSize = 12.sp, color = Color.Gray,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                     )
@@ -1175,7 +1210,7 @@ fun ScheduleScreen(
                                     Box(
                                         Modifier
                                             .clip(RoundedCornerShape(6.dp))
-                                            .background(if (day == todayDay) MIET_BLUE else Color(0xFFE3F2FD))
+                                            .background(if (day == markedDay) MIET_BLUE else Color(0xFFE3F2FD))
                                             .padding(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
                                         Text(
@@ -1186,10 +1221,10 @@ fun ScheduleScreen(
                                             // как сегодняшние — при листании «›».
                                             WeekType.dayWithDate(day, weekOffset, semestrStartIso),
                                             fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                                            color = if (day == todayDay) Color.White else Color(0xFF1A1A1A)
+                                            color = if (day == markedDay) Color.White else Color(0xFF1A1A1A)
                                         )
                                     }
-                                    if (day == todayDay) {
+                                    if (day == markedDay) {
                                         Spacer(Modifier.width(8.dp))
                                         Text("— сегодня", fontSize = 11.sp, color = MIET_BLUE)
                                     }

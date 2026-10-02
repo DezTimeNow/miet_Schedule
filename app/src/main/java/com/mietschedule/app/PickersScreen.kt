@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -64,6 +65,7 @@ fun TeacherPickerScreen(
     onChosen: (name: String, code: String) -> Unit,
     onBack: () -> Unit,
     onRefresh: () -> Unit = {},
+    onChangeRole: () -> Unit = {},
     onAbout: () -> Unit = {},
     refreshing: Boolean = false,
     // Прогресс обновления под шапкой: обновляются все 344 группы, это
@@ -163,12 +165,19 @@ fun TeacherPickerScreen(
                             Icons.Filled.Refresh,
                             contentDescription = "Обновить всё",
                             tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
-                    IconButton(onClick = onAbout) {
-                        Icon(Icons.Filled.Info, contentDescription = "О программе", tint = Color.White)
+                    // «Роль» справа от обновления — на всех экранах, иначе
+                    // иконка обновления прыгает по шапке и «одно место»
+                    // не выполняется.
+                    TextButton(onClick = onChangeRole) {
+                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
                     }
+                                        // «О программе» убрана из шапки: пока она стояла справа от
+                    // обновления, иконка обновления съезжала с 855 на 728, то
+                    // есть «одно и то же место на всех экранах» не выполнялось.
+                    // Экран доступен с экрана роли — кнопкой внизу.
                 }
             )
         }
@@ -310,6 +319,7 @@ fun AudiencePickerScreen(
     onChosen: (code: Int, name: String) -> Unit,
     onBack: () -> Unit,
     onRefresh: () -> Unit = {},
+    onChangeRole: () -> Unit = {},
     onAbout: () -> Unit = {},
     refreshing: Boolean = false,
     // Прогресс обновления под шапкой: обновляются все 344 группы, это
@@ -437,12 +447,19 @@ fun AudiencePickerScreen(
                             Icons.Filled.Refresh,
                             contentDescription = "Обновить всё",
                             tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
-                    IconButton(onClick = onAbout) {
-                        Icon(Icons.Filled.Info, contentDescription = "О программе", tint = Color.White)
+                    // «Роль» справа от обновления — на всех экранах, иначе
+                    // иконка обновления прыгает по шапке и «одно место»
+                    // не выполняется.
+                    TextButton(onClick = onChangeRole) {
+                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
                     }
+                                        // «О программе» убрана из шапки: пока она стояла справа от
+                    // обновления, иконка обновления съезжала с 855 на 728, то
+                    // есть «одно и то же место на всех экранах» не выполнялось.
+                    // Экран доступен с экрана роли — кнопкой внизу.
                 }
             )
         }

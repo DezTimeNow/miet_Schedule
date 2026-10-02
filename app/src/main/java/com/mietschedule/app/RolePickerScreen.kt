@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -51,6 +52,7 @@ fun RolePickerScreen(
     onPick: (Role) -> Unit,
     onBack: (() -> Unit)? = null,
     onRefresh: () -> Unit = {},
+    onChangeRole: () -> Unit = {},
     onAbout: () -> Unit = {},
     refreshing: Boolean = false,
     // Прогресс обновления: обновляются все 344 группы, это ~35 секунд.
@@ -80,9 +82,15 @@ fun RolePickerScreen(
                             modifier = Modifier.size(22.dp)
                         )
                     }
-                    IconButton(onClick = onAbout) {
-                        Icon(Icons.Filled.Info, contentDescription = "О программе", tint = Color.White)
+                    // «Роль» — справа от обновления, как на остальных экранах,
+                    // чтобы иконка обновления стояла в одном месте.
+                    TextButton(onClick = onChangeRole) {
+                        Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
                     }
+                                        // «О программе» убрана из шапки: пока она стояла справа от
+                    // обновления, иконка обновления съезжала с 854 на 729, то
+                    // есть «одно и то же место на всех экранах» не выполнялось.
+                    // Доступ к экрану остался внизу, отдельной кнопкой.
                 }
             )
         }
@@ -131,6 +139,12 @@ fun RolePickerScreen(
                 Spacer(Modifier.height(10.dp))
             }
             Spacer(Modifier.height(24.dp))
+            // «О программе» убрана из шапки ради единого места у кнопки
+            // обновления, но доступ не потерян: кнопка стоит под списком ролей.
+            Spacer(Modifier.height(14.dp))
+            TextButton(onClick = onAbout, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text("О программе", color = MIET_BLUE, fontSize = 13.sp)
+            }
         }
     }
 }
