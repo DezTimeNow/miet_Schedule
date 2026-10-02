@@ -180,16 +180,19 @@ object UpdateChecker {
     // ───────────────────────── разбор ответа ─────────────────────────
 
     /**
-     * `tag_name` может быть «v12», «12» или даже «release-12» — достаём число.
+     * `tag_name` может быть «0.29», «v0.29», «release-0.29» — достаём число.
+     * Берём последнюю группу цифр: в альфе номер релиза стоит после точки
+     * («0.29» → 29), а склейка всех цифр дала бы 029 и ломала сравнение
+     * с `versionCode`.
      * Возвращаем null, если числа нет: сравнивать не с чем, и лучше не показать
      * диалог, чем показать мусор.
      */
     internal fun parseVersionCode(tag: String?): Int? {
-        val digits = tag?.trim()?.let { TAG_RE.findAll(it).mapNotNull { m -> m.value }.joinToString("") }
-        return digits?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+        val lastMatch = tag?.trim()?.let { TAG_RE.findAll(it).lastOrNull()?.value }
+        return lastMatch?.toIntOrNull()
     }
 
-    // Тег вида «v12», «V12», «12», «release-12», «v1.2.3» → числа
+    // Тег вида «0.29», «v0.29», «29», «release-29», «v29» → число
     private val TAG_RE = Regex("[0-9]+")
 
     internal fun fetchLatest(url: String): UpdateInfo? {
@@ -245,7 +248,12 @@ data class UpdateInfo(
     val sizeBytes: Long,
     val sha256: String?,
 ) {
-    val versionLabel: String = "v$versionCode"
+    /**
+     * Подпись версии для пользователя: берём сам тег релиза («0.29»), чтобы
+     * в диалоге обновления и на экране «О программе» показывалось ровно то,
+     * что опубликовано на GitHub.
+     */
+    val versionLabel: String = tagName.ifBlank { "сборка $versionCode" }
 
     /**
      * Человеческий размер: 16.7 МБ.

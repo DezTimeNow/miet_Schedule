@@ -563,8 +563,13 @@ class ScheduleParseTest {
     // ─────────────────────── обновления через GitHub ────────────────────────
 
     /**
-     * Тег релиза приходит в разном виде: «v12», «12», «release-12», «v1.2.3».
-     * versionCode приложения — целое число, поэтому из тега достаём число.
+     * Тег релиза приходит в разном виде: «0.29», «v0.29», «29»,
+     * «release-0.29». versionCode приложения — целое число, поэтому из тега
+     * достаём последнюю группу цифр: номер релиза стоит после точки.
+     *
+     * Раньше цифры склеивались, и «0.29» давало 029 → 29 вроде бы правильно,
+     * а вот «1.0.0-alpha.29» давало 10029 — всегда больше любого versionCode,
+     * из-за чего обновление предлагалось бы бесконечно.
      */
     @Test
     fun `тег релиза разбирается в номер версии`() {
@@ -573,6 +578,13 @@ class ScheduleParseTest {
         assertEquals(12, UpdateChecker.parseVersionCode("12"))
         assertEquals(12, UpdateChecker.parseVersionCode("  v12  "))
         assertEquals(3, UpdateChecker.parseVersionCode("release-3"))
+        // Альфа: номер после точки — это и есть номер сборки.
+        assertEquals(29, UpdateChecker.parseVersionCode("0.29"))
+        assertEquals(29, UpdateChecker.parseVersionCode("v0.29"))
+        assertEquals(29, UpdateChecker.parseVersionCode("release-0.29"))
+        // Склейка всех цифр сломала бы сравнение с versionCode: «0.30.0-alpha.29»
+        // превратилось бы в 30029 и обновление предлагалось бы бесконечно.
+        assertEquals(29, UpdateChecker.parseVersionCode("0.30.0-alpha.29"))
     }
 
     @Test
@@ -595,6 +607,12 @@ class ScheduleParseTest {
         // иначе предложишь «откатиться».
         assertTrue(UpdateChecker.parseVersionCode("v12")!! >= current)
         assertFalse(UpdateChecker.parseVersionCode("v11")!! >= current)
+        // Альфа-нумерация: текущая сборка 30, релиз 0.31 её новее,
+        // а собственный тег 0.30 — нет.
+        val alpha = 30
+        assertTrue(UpdateChecker.parseVersionCode("0.31")!! > alpha)
+        assertFalse(UpdateChecker.parseVersionCode("0.30")!! > alpha)
+        assertFalse(UpdateChecker.parseVersionCode("0.29")!! > alpha)
     }
 
     @Test
@@ -607,6 +625,21 @@ class ScheduleParseTest {
         assertEquals("v13", u.versionLabel)
         // Размер неизвестен — подпись пустая, а не «0.0 МБ».
         assertEquals("", u.copy(sizeBytes = 0L).sizeLabel)
+    }
+
+    @Test
+    fun `подпись версии совпадает с тегом релиза`() {
+        // Показываем ровно то, что опубликовано на GitHub, а не собранное
+        // из номера: для альфы это «0.30», а не «v30».
+        val alpha = UpdateInfo(
+            versionCode = 30, tagName = "0.30", title = "", notes = "",
+            apkName = "a.apk", downloadUrl = "http://x", sizeBytes = 1, sha256 = null,
+        )
+        assertEquals("0.30", alpha.versionLabel)
+        // Если тег по какой-то причине пуст, показываем номер сборки,
+        // чтобы в диалоге не было пустой строки.
+        val blank = alpha.copy(tagName = "")
+        assertEquals("сборка 30", blank.versionLabel)
     }
 
     @Test
