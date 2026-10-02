@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
@@ -64,7 +65,10 @@ fun TeacherPickerScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit = {},
     onAbout: () -> Unit = {},
-    refreshing: Boolean = false
+    refreshing: Boolean = false,
+    // Прогресс обновления под шапкой: обновляются все 344 группы, это
+    // ~35 секунд, и без текста ожидание выглядит как зависшее приложение.
+    refreshNote: String = ""
 ) {
     var teachers by remember { mutableStateOf<List<TeacherIndex.Teacher>>(emptyList()) }
     var building by remember { mutableStateOf(false) }
@@ -150,9 +154,17 @@ fun TeacherPickerScreen(
                 },
                 actions = {
                     IconButton(onClick = onRefresh, enabled = !refreshing) {
+                        // Та же иконка, что и в шапке расписания: глиф «↻» и
+                        // иконка Refresh читались как две разные кнопки, а
+                        // просьба была одна кнопка, везде одинаковая.
                         if (refreshing) CircularProgressIndicator(
                             Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
-                        ) else Text("\u21bb", color = Color.White, fontSize = 20.sp)
+                        ) else Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Обновить всё",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "О программе", tint = Color.White)
@@ -162,6 +174,16 @@ fun TeacherPickerScreen(
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
+            // Прогресс обновления: обновляются все 344 группы — это ~35 секунд.
+            // Без этой строки ожидание выглядит как зависшее приложение.
+            if (refreshing && refreshNote.isNotEmpty()) {
+                Text(
+                    refreshNote,
+                    fontSize = 12.sp,
+                    color = MIET_BLUE,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp)
+                )
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it; openLetter = null },
@@ -289,7 +311,10 @@ fun AudiencePickerScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit = {},
     onAbout: () -> Unit = {},
-    refreshing: Boolean = false
+    refreshing: Boolean = false,
+    // Прогресс обновления под шапкой: обновляются все 344 группы, это
+    // ~35 секунд, и без текста ожидание выглядит как зависшее приложение.
+    refreshNote: String = ""
 ) {
     var list by remember { mutableStateOf<List<Audience>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -403,9 +428,17 @@ fun AudiencePickerScreen(
                 },
                 actions = {
                     IconButton(onClick = onRefresh, enabled = !refreshing) {
+                        // Та же иконка, что и в шапке расписания: глиф «↻» и
+                        // иконка Refresh читались как две разные кнопки, а
+                        // просьба была одна кнопка, везде одинаковая.
                         if (refreshing) CircularProgressIndicator(
                             Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
-                        ) else Text("\u21bb", color = Color.White, fontSize = 20.sp)
+                        ) else Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Обновить всё",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "О программе", tint = Color.White)
@@ -415,6 +448,16 @@ fun AudiencePickerScreen(
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
+            // Прогресс обновления: обновляются все 344 группы — это ~35 секунд.
+            // Без этой строки ожидание выглядит как зависшее приложение.
+            if (refreshing && refreshNote.isNotEmpty()) {
+                Text(
+                    refreshNote,
+                    fontSize = 12.sp,
+                    color = MIET_BLUE,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp)
+                )
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it; openBldg = null },

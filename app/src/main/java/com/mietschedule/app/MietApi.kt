@@ -14,9 +14,20 @@ import java.util.concurrent.TimeUnit
  */
 class MietApi(private val context: Context) {
 
+    /**
+     * maxRequestsPerHost по умолчанию равен 5, а обновление запускает 6 потоков.
+     * Шестой поток всё время ждал остальные, и обновление 343 групп ползло
+     * 208 секунд вместо 30. Ставим 8 — с запасом на переподключения.
+     */
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        .dispatcher(
+            okhttp3.Dispatcher().apply {
+                maxRequests = 16
+                maxRequestsPerHost = 8
+            }
+        )
         .build()
 
     private val prefs = context.getSharedPreferences("miet_cache", Context.MODE_PRIVATE)
@@ -35,11 +46,19 @@ class MietApi(private val context: Context) {
     }
 
     /** Список всех групп (344 шт) */
-    fun fetchGroups(): List<String> {
+    /**
+     * Список групп с сайта.
+     *
+     * @param force=true игнорирует кэш и всегда идёт на miet.ru. Кнопка
+     *   «Обновить всё» обязана обновлять ВСЁ, а список групп меняется каждый
+     *   семестр: при недельном TTL новые группы могли не появиться неделями,
+     *   и кнопка обещала полное обновление, а по факту брала старый список.
+     */
+    fun fetchGroups(force: Boolean = false): List<String> {
         val cached = prefs.getString("groups", null)
         val fresh = prefs.getLong("groups_ts", 0L)
         val ttl = 7L * 24 * 60 * 60 * 1000
-        if (cached != null && System.currentTimeMillis() - fresh < ttl) {
+        if (!force && cached != null && System.currentTimeMillis() - fresh < ttl) {
             return cached.split("|||").filter { it.isNotBlank() }
         }
         val raw = post(ApiPaths.GROUPS, null)
@@ -51,12 +70,56 @@ class MietApi(private val context: Context) {
         return list
     }
 
-    /** Расписание группы */
-    fun fetchSchedule(group: String): String {
+    /**
+     * Расписание группы.
+     *
+     * Запись СИНХРОННАЯ (commit), а не apply(). apply() возвращает управление
+     * немедленно и пишет в фоне — при 344 группах подряд экран успевал прочитать
+     * недописанный кэш: замерено, в файле оказывалось 275 ключей из 344.
+     *
+     * Синхронизация на самом prefs — потому что refreshCurrent() дёргает 6 потоков
+     * одновременно, а SharedPreferences.apply() из шести потоков теряет записи:
+     * каждый читает свой снимок и затирает чужой.
+     */
+    fun fetchSchedule(group: String): String =
+        post(ApiPaths.DATA, FormBody.Builder().add("group", group).build())
+
+    /**
+     * Пишет расписание группы в кэш.
+     *
+     * Запись намеренно ОТДЕЛЕНА от сетевого вызова. Раньше каждый из 343
+     * запроса сам делал prefs.commit() — синхронную запись на диск, — и обход
+     * занимал 208 секунд вместо 30. Теперь сеть идёт быстро и параллельно,
+     * а результаты пишутся одним пакетом через [saveSchedules].
+     */
+    fun cacheSchedule(group: String, raw: String) {
         val key = "sched_${group}"
-        val raw = post(ApiPaths.DATA, FormBody.Builder().add("group", group).build())
-        prefs.edit().putString(key, raw).putLong("${key}_ts", System.currentTimeMillis()).apply()
-        return raw
+        prefs.edit().putString(key, raw)
+            .putLong("${key}_ts", System.currentTimeMillis())
+            .commit()
+    }
+
+    /**
+     * Пакетная запись расписаний ОДНИМ редактором.
+     *
+     * 343 отдельных commit() — это 343 синхронных выхода на диск, и они
+     * съедали всё время обновления. Один commit() на 343 ключа занимает
+     * доли секунды.
+     *
+     * Метки времени ставятся ОДНОЙ величиной на весь пакет: так дата
+     * обновления честная (время завершения записи) и не «прыгает» между
+     * группами, а [lastScheduleWriteTs] видит реальную свежесть кэша.
+     */
+    fun saveSchedules(items: Map<String, String>) {
+        if (items.isEmpty()) return
+        val ts = System.currentTimeMillis()
+        val ed = prefs.edit()
+        for ((group, raw) in items) {
+            val key = "sched_${group}"
+            ed.putString(key, raw)
+            ed.putLong("${key}_ts", ts)
+        }
+        ed.commit()
     }
 
     /**
@@ -82,9 +145,9 @@ class MietApi(private val context: Context) {
             true
         }
         if (!empty) {
-            prefs.edit().putString(key, raw).putLong("${key}_ts", System.currentTimeMillis()).apply()
+            prefs.edit().putString(key, raw).putLong("${key}_ts", System.currentTimeMillis()).commit()
         } else {
-            prefs.edit().remove(key).remove("${key}_ts").apply()
+            prefs.edit().remove(key).remove("${key}_ts").commit()
         }
         return raw
     }
@@ -107,12 +170,48 @@ class MietApi(private val context: Context) {
      * Берём МАКСИМУМ, а не минимум: «обновлено 2 минуты назад» честнее, чем
      * «5 дней назад» из-за одного старого куска кэша, который всё равно пригодится.
      */
+    /**
+     * Метка последней реальной записи расписания в кэш, мс.
+     *
+     * Нужна аудитории и преподавателю: их экран собирается из расписаний
+     * ГРУПП, а groups_ts не отражает их свежесть — fetchGroups() при недельном
+     * TTL возвращает кэш и метку не двигает. Смотрим на сами ключи расписаний.
+     */
+    fun lastScheduleWriteTs(): Long {
+        // prefs.all — это копия снимка, уже запертого внутри SharedPreferences,
+        // держать здесь свой монитор не нужно: он лишь замедлял записи.
+        var best = 0L
+        val all = prefs.all
+        for ((k, v) in all) {
+            if (!k.startsWith("sched_") || !k.endsWith("_ts")) continue
+            val ts = (v as? Long) ?: 0L
+            if (ts > best) best = ts
+        }
+        return best
+    }
+
     fun lastUpdatedAt(role: Role, entity: String): Long {
         val candidates = when (role) {
             Role.STUDENT -> listOf(prefs.getLong("sched_${entity}_ts", 0L))
+            // Аудитория: ключи БЫЛИ не те, отчего подпись молчала «ещё не
+            // обновлялось» даже после успешного обновления.
+            //
+            // Что приходит: entity = ИМЯ аудитории («8307»), teacherCode = её
+            // ВНУТРЕННИЙ числовой id (234). Ключ в кэше — `aud_234_ts`, то есть
+            // по имени его не достать НИКОГДА. А `sched_8307_ts` не существует
+            // в принципе: расписания хранятся по ГРУППАМ, а не по аудиториям.
+            //
+            // Занятость аудитории строится из расписаний групп, поэтому честная
+            // метка здесь — когда перезапрашивали расписания (группы_ts), плюс
+            // метка самого ответа по аудитории, если он есть.
+            //
+            // И groups_ts тут НЕ годился: fetchGroups() отдаёт кэш, если ему
+            // меньше недели, метку не трогает — и подпись застревала на часах
+            // давности, хотя расписания только что перезапросили. Честная метка
+            // здесь — последняя реальная запись расписания, а не список групп.
             Role.AUDIENCE -> listOfNotNull(
                 entity.trim().toIntOrNull()?.let { prefs.getLong("aud_${it}_ts", 0L) },
-                prefs.getLong("sched_${entity}_ts", 0L),
+                lastScheduleWriteTs(),
             )
             // Преподаватель: сперва ЕГО СОБСТВЕННАЯ свежесть (её держит
             // TeacherIndex.refreshTeacher в поле freshAt его записи индекса).

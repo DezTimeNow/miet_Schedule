@@ -75,11 +75,44 @@ object TeacherIndex {
      * Расписания при этом кэшируются (их и так использует режим студента), так что
      * повторный запуск бесплатный — [lessonsOf] достанет пары из кэша.
      */
+    /**
+     * Пересобирает индекс преподавателей из УЖЕ ЗАПИСАННОГО кэша расписаний,
+     * без единого запроса в сеть.
+     *
+     * Зачем: кнопка «Обновить всё» сначала обновляет 344 расписания, и индекс
+     * должен отражать именно их. Прежний [build] ходил на miet.ru повторно —
+     * это был второй полный проход по 344 группам после «обновления», и
+     * метка обновления уезжала вперёд на минуты. Здесь индекс строится из
+     * того, что только что скачано, за секунды и без сети.
+     */
+    suspend fun buildFromCache(api: MietApi, groups: List<String>): List<Teacher> =
+        withContext(Dispatchers.IO) { buildIndex(api, groups) { g -> api.cachedSchedule(g) } }
+
     suspend fun build(
         api: MietApi,
         groups: List<String>,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): List<Teacher> = withContext(Dispatchers.IO) {
+        // СЕТЬ + запись в кэш: build() сам качает группы, значит обязан и
+        // сохранить их. fetchSchedule больше не пишет кэш сам (343 commit()
+        // тормозили обновление), поэтому пишем здесь — по одному, этот путь
+        // единичный, а не массовый.
+        buildIndex(api, groups, onProgress) { g ->
+            api.fetchSchedule(g).also { api.cacheSchedule(g, it) }
+        }
+    }
+
+    /**
+     * Общее тело: [loadRaw] отдаёт сырой JSON расписания группы. Сеть там или
+     * кэш — решает вызывающий, поэтому [build] и [buildFromCache] отличаются
+     * только источником данных и не дублируют 70 строк разбора.
+     */
+    private suspend fun buildIndex(
+        api: MietApi,
+        groups: List<String>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+        loadRaw: (String) -> String?
+    ): List<Teacher> {
         val names = ConcurrentHashMap<String, String>()   // key -> ФИО
         val shorts = ConcurrentHashMap<String, String>()  // key -> ФИО краткое
         val slots = ConcurrentHashMap<String, MutableSet<String>>() // key -> слоты
@@ -93,7 +126,7 @@ object TeacherIndex {
             val futures = groups.map { g ->
                 pool.submit {
                     var raw: String? = null
-                    try { raw = api.fetchSchedule(g) } catch (e: Exception) {
+                    try { raw = loadRaw(g) } catch (e: Exception) {
                         Log.w(TAG, "Не получили $g: ${e.message}")
                     }
                     val data: List<Lesson> = if (raw != null) {
@@ -146,7 +179,7 @@ object TeacherIndex {
         api.saveTeacherIndex(KEY_LIST, GsonHolder.gson.toJson(result))
         api.saveTeacherIndexTs(KEY_TS, System.currentTimeMillis())
         Log.i(TAG, "Индекс преподавателей: ${result.size}")
-        result
+        return result
     }
 
     /**

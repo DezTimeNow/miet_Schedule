@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -111,9 +112,20 @@ fun AppRoot(
     var screen by remember {
         mutableStateOf(if (prefs.load() != null || requestedGroup != null) Screen.PICK_ENTITY else Screen.PICK_ROLE)
     }
-    // Кнопка «Обновить» есть на всех трёх экранах выбора, поэтому состояние
-    // живёт здесь и передаётся вниз — иначе каждый экран вёл бы свой счётчик.
+    // Кнопка «Обновить» есть на всех экранах, поэтому состояние живёт здесь и
+    // передаётся вниз — иначе каждый экран вёл бы свой счётчик.
     var refreshing by remember { mutableStateOf(false) }
+
+    // СЧЁТЧИК ПОКОЛЕНИЙ. Это главное: refreshCurrent() пишет в кэш, но экран
+    // расписания — отдельный composable со своим состоянием, и без сигнала он
+    // продолжает показывать старое. Именно поэтому «Обновить» отработал за
+    // 30 секунд, а на экране осталось «ещё не обновлялось».
+    // Любое успешное обновление увеличивает счётчик, и ScheduleScreen по нему
+    // перечитывает кэш и пересчитывает дату.
+    var dataGeneration by remember { mutableIntStateOf(0) }
+
+    // Прогресс обновления, чтобы «30 секунд крутит» не выглядели зависанием.
+    var refreshNote by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     /**
@@ -124,58 +136,99 @@ fun AppRoot(
      * на IO-диспетчере: сетевой вызов из главного потока даёт
      * NetworkOnMainThreadException.
      */
+    /**
+     * ОБНОВЛЕНИЕ ВСЕГО, ЧТО ВИЖНО. Одна кнопка в любом меню.
+     *
+     * Раньше здесь было три разных поведения, и каждое обновляло не всё:
+     * студент — свою группу, аудитория — список аудиторий, преподаватель —
+     * индекс. Пользователь жал кнопку и получал «обновилось», а на экране
+     * было по-прежнему. Теперь обновляется ВСЁ, независимо от роли:
+     * список групп, расписания всех групп, список аудиторий, ответ по
+     * выбранной аудитории, индекс преподавателей.
+     *
+     * 344 группы параллельно — около 35 секунд, поэтому показываем прогресс
+     * («Обновляю… 120 из 344»), иначе это выглядит как зависшее приложение.
+     */
     fun refreshCurrent() {
         if (refreshing) return
         scope.launch {
             refreshing = true
-            withContext(Dispatchers.IO) {
+            refreshNote = "Обновляю…"
+            val result = withContext(Dispatchers.IO) {
+                var schedules = 0
+                var groupsN = 0
                 runCatching {
-                    when (role) {
-                        Role.STUDENT -> selection?.let { api.fetchSchedule(it) }
-                        Role.AUDIENCE -> {
-                            api.fetchGroups()
-                            api.fetchAudiences()
-                            // Занятость аудитории собирается из расписаний ГРУПП,
-                            // а не из ответа по самой аудитории (сервер отдаёт для
-                            // 8307 чужие 12 строк из «8307 к»). Значит «Обновить»
-                            // обязан перезапросить расписания групп, иначе кнопка
-                            // обновляет список из 13 аудиторий, а карточки на
-                            // экране остаются вчерашними — выглядит как «не работает».
-                            val groups = api.cachedGroups()
-                            if (groups.isEmpty()) {
-                                Log.i("Refresh", "Список групп пуст — перезапрос нечем")
-                            } else {
-                                var done = 0
-                                groups.forEach { g ->
-                                    runCatching { api.fetchSchedule(g) }
-                                        .onSuccess { done++ }
-                                        .onFailure { Log.w("Refresh", "Не обновили $g: ${it.message}") }
+                    // Список групп — с сайта, кэш не берём: кнопка обещает
+                    // обновить вообще всё, а TTL в неделю прятал новые группы.
+                    val groups = api.fetchGroups(force = true)
+                    groupsN = groups.size
+                    // Расписания групп — единственный источник для аудитории и
+                    // преподавателя, поэтому обновляем их ВСЕГДА.
+                    val total = groups.size
+                    val done = java.util.concurrent.atomic.AtomicInteger(0)
+                    // Результаты копим В ПАМЯТИ и пишем в кэш одним пакетом.
+                    //
+                    // Раньше каждый из 343 запроса сам делал prefs.commit(), то
+                    // есть 343 синхронных записи на диск посреди сетевого обхода.
+                    // Замерено на эмуляторе: 120 групп за 208 секунд. Живым curl
+                    // те же 343 группы скачиваются за 30 секунд — то есть тормозил
+                    // не сайт, а запись кэша. Здесь сеть идёт чисто и параллельно.
+                    val fresh = java.util.concurrent.ConcurrentHashMap<String, String>()
+                    val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
+                    try {
+                        pool.invokeAll(groups.map { g ->
+                            java.util.concurrent.Callable {
+                                runCatching { api.fetchSchedule(g) }
+                                    .onSuccess { fresh[g] = it; schedules++ }
+                                    .onFailure { Log.w("Refresh", "Не обновили $g: ${it.message}") }
+                                val n = done.incrementAndGet()
+                                if (n % 20 == 0 || n == total) {
+                                    refreshNote = "Обновляю… $n из $total"
                                 }
-                                Log.i("Refresh", "Аудитория: обновлено расписаний $done из ${groups.size}")
                             }
-                        }
-                        Role.TEACHER -> {
-                            val groups = api.fetchGroups()
-                            // Полная пересборка индекса бьёт по всем 344 группам
-                            // — это минуты, и на кнопке «Обновить» в меню это
-                            // выглядело как зависшее приложение. Если у
-                            // преподавателя уже есть группы в кэше, ходим только
-                            // по ним; пересборка остаётся запасным путём.
-                            val quick = teacherCode.isNotEmpty() &&
-                                TeacherIndex.refreshTeacher(api, groups, teacherCode)
-                            if (!quick) TeacherIndex.build(api, groups)
-                        }
+                        })
+                    } finally {
+                        pool.shutdown()
                     }
-                }.onFailure { Log.w("Refresh", "Не обновилось: ${it.message}") }
+                    // Один commit() на все расписания вместо 343.
+                    refreshNote = "Сохраняю…"
+                    api.saveSchedules(fresh)
+                    Log.i("Refresh", "В кэш записано ${fresh.size} расписаний одним пакетом")
+                    // Списки и ответ по выбранной аудитории — тоже.
+                    runCatching { api.fetchAudiences() }
+                    teacherCode.toIntOrNull()?.let { code ->
+                        runCatching { api.fetchAudience(code) }
+                            .onFailure { Log.w("Refresh", "Аудитория $code: ${it.message}") }
+                    }
+                    // Индекс преподавателей пересобираем из ТОЛЬКО ЧТО
+                    // скачанного кэша (buildFromCache), а не через TeacherIndex.build:
+                    // тот ходит на miet.ru по всем 344 группам заново, и «обновление
+                    // всего» превращалось в два полных прохода подряд. Отсюда же
+                    // берётся метка индекса на экране «О программе».
+                    runCatching { TeacherIndex.buildFromCache(api, groups) }
+                        .onSuccess { Log.i("Refresh", "Индекс преподавателей: $it") }
+                        .onFailure { Log.w("Refresh", "Индекс преподавателей: ${it.message}") }
+                    Log.i("Refresh", "Готово: расписаний $schedules из $groupsN")
+                }.onFailure {
+                    Log.w("Refresh", "Обновление с ошибкой: ${it.message}")
+                }
+                schedules to groupsN
             }
+            // Сигнал экрану перечитать кэш. Без этого он показывал бы старое.
+            dataGeneration++
+            refreshNote = if (result.first > 0) {
+                "Обновлено ${result.first} из ${result.second}"
+            } else "Ничего не обновилось"
             refreshing = false
         }
     }
+
 
     when (screen) {
         Screen.PICK_ROLE -> RolePickerScreen(
             current = if (prefs.load() != null) role else null,
             onRefresh = { refreshCurrent() },
+            refreshNote = refreshNote,
             onAbout = { screen = Screen.ABOUT },
             refreshing = refreshing,
             onPick = { r ->
@@ -195,7 +248,10 @@ fun AppRoot(
                         selection = chosen
                         screen = Screen.SCHEDULE
                     },
-                    onSwitchRole = { screen = Screen.PICK_ROLE }
+                    onSwitchRole = { screen = Screen.PICK_ROLE },
+                    onRefresh = { refreshCurrent() },
+                    refreshing = refreshing,
+                    refreshNote = refreshNote,
                 )
                 Role.TEACHER -> TeacherPickerScreen(
                     api, prefs,
@@ -224,6 +280,7 @@ fun AppRoot(
                     },
                     onBack = { screen = Screen.PICK_ROLE },
                     onRefresh = { refreshCurrent() },
+            refreshNote = refreshNote,
                     onAbout = { screen = Screen.ABOUT },
                     refreshing = refreshing
                 )
@@ -235,6 +292,9 @@ fun AppRoot(
             versionCode = BuildConfig.VERSION_CODE,
             onBack = { screen = if (selection != null) Screen.PICK_ENTITY else Screen.PICK_ROLE },
             onUpdateFound = onUpdateFound,
+            onRefresh = { refreshCurrent() },
+            refreshing = refreshing,
+            refreshNote = refreshNote,
         )
 
         Screen.FAVORITES -> FavoritesScreen(
@@ -245,7 +305,10 @@ fun AppRoot(
                 teacherCode = ""
                 screen = Screen.PICK_ENTITY
             },
-            onBack = { screen = Screen.SCHEDULE }
+            onBack = { screen = Screen.SCHEDULE },
+            onRefresh = { refreshCurrent() },
+            refreshing = refreshing,
+            refreshNote = refreshNote,
         )
 
         Screen.SCHEDULE -> ScheduleScreen(
@@ -255,6 +318,9 @@ fun AppRoot(
             group = selection!!,
             teacherCode = teacherCode,
             roomName = roomNameArg,
+            dataGeneration = dataGeneration,
+            onRefreshAll = { refreshCurrent() },
+            refreshNote = refreshNote,
             onChangeEntity = { screen = Screen.PICK_ENTITY },
             onOpenFavorites = { screen = Screen.FAVORITES },
             // Из избранного аудитория открывается по имени (value), а код
@@ -280,7 +346,10 @@ fun GroupPickerScreen(
     prefs: GroupPrefs,
     currentGroup: String?,
     onChosen: (String) -> Unit,
-    onSwitchRole: () -> Unit = {}
+    onSwitchRole: () -> Unit = {},
+    onRefresh: () -> Unit = {},
+    refreshing: Boolean = false,
+    refreshNote: String = ""
 ) {
     var groups by remember { mutableStateOf<List<String>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -335,6 +404,16 @@ fun GroupPickerScreen(
                     // выйти только кнопкой «назад», которая закрывает приложение.
                     TextButton(onClick = onSwitchRole) {
                         Text("Сменить роль", color = Color.White, fontSize = 13.sp)
+                    }
+                    // Кнопка обновления должна быть на КАЖДОМ экране: требование
+                    // «где бы я ни нажал — обновилось всё». Экраны выбора группы
+                    // и преподавателя её не имели.
+                    IconButton(onClick = onRefresh, enabled = !refreshing) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Обновить всё",
+                            tint = Color.White
+                        )
                     }
                 }
             )
@@ -546,6 +625,9 @@ fun ScheduleScreen(
     group: String,
     teacherCode: String,
     roomName: String = "",
+    dataGeneration: Int = 0,
+    onRefreshAll: () -> Unit = {},
+    refreshNote: String = "",
     onChangeEntity: () -> Unit,
     onChangeRole: () -> Unit,
     onOpenFavorites: () -> Unit = {}
@@ -562,6 +644,13 @@ fun ScheduleScreen(
     var lastUpdated by remember { mutableStateOf(0L) }
     var weekName by remember { mutableStateOf(WeekType.currentName()) }
     var weekRow by remember { mutableStateOf(WeekType.currentRowIndex()) }
+    // Сдвиг учебной недели для кнопок «‹ неделя ›». 0 = текущая, +1 = следующая.
+    // Хранится именно сдвиг, а не абсолютный тип недели: при смене семестра
+    // абсолютное значение устареет, а сдвиг 0 всегда означает «текущая».
+    var weekOffset by remember { mutableIntStateOf(0) }
+    // Начало семестра нужно и для пересчёта сдвига, иначе после смены семестра
+    // weekRow уедет. Кэшируем один раз на запуск экрана.
+    var semestrStartIso by remember { mutableStateOf(WeekType.SEMESTR_START_ISO) }
 
     // API отдаёт Day 1..6 (Пн..Сб). Наш индекс: 0=Пн … 6=Вс.
     //
@@ -588,6 +677,8 @@ fun ScheduleScreen(
     // Актуализируем неделю при запуске и возврате на экран
     LaunchedEffect(group) {
         val ss = withContext(Dispatchers.IO) { api.semestrStart() }
+        semestrStartIso = ss
+        weekOffset = 0
         weekName = WeekType.currentName(ss)
         weekRow = WeekType.currentRowIndex(ss)
     }
@@ -603,6 +694,7 @@ fun ScheduleScreen(
     // Дата последнего обновления. Перечитываем и при смене роли/объекта, и
     // после каждой загрузки — иначе после «Обновить» осталась бы старая дата.
     LaunchedEffect(group, role) { refreshLastUpdated() }
+
 
     fun apply(raw: String) {
         val resp = GsonHolder.gson.fromJson(raw, ScheduleResponse::class.java)
@@ -622,7 +714,14 @@ fun ScheduleScreen(
                     val cached = withContext(Dispatchers.IO) { api.cachedSchedule(group) }
                     if (cached != null) runCatching { apply(cached) }
                     if (force || lessons.isEmpty()) {
-                        runCatching { withContext(Dispatchers.IO) { api.fetchSchedule(group) } }
+                        // fetchSchedule больше НЕ пишет кэш сам — иначе 343
+                        // commit() посреди обновления съедали всё время. Здесь
+                        // одиночный запрос, пишем кэш явно и ровно один раз.
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                api.fetchSchedule(group).also { api.cacheSchedule(group, it) }
+                            }
+                        }
                             .onSuccess { raw -> runCatching { apply(raw) } }
                             .onFailure {
                                 Log.w("Schedule", "Не получили $group", it)
@@ -659,20 +758,16 @@ fun ScheduleScreen(
                             // расписания ГРУПП. Раньше тут ходили только за ответом
                             // по самой аудитории, а он для 8307 отдаёт чужие 12 строк
                             // из «8307 к»: кнопка нажималась, карточки не менялись.
-                            if (force) {
-                                val gs = withContext(Dispatchers.IO) { api.cachedGroups() }
-                                if (gs.isNotEmpty()) {
-                                    var n = 0
-                                    withContext(Dispatchers.IO) {
-                                        for (g in gs) {
-                                            runCatching { api.fetchSchedule(g) }
-                                                .onSuccess { n++ }
-                                                .onFailure { Log.w("Schedule", "Не обновили $g: ${it.message}") }
-                                        }
-                                    }
-                                    Log.i("Schedule", "Аудитория $code: обновлено $n расписаний")
-                                }
-                            }
+                            // Обновлять расписания групп здесь НЕЛЬЗЯ.
+                            //
+                            // Раньше этот блок при force заново обходил все группы
+                            // СЕГУЕНТНО (for по списку), и обновление аудитории
+                            // превращалось в второй полный проход по 343 группам
+                            // после «обновления». Теперь всю сеть делает
+                            // refreshCurrent() — параллельно и с пакетной
+                            // записью, — а load() только пересобирает экран
+                            // из уже обновлённого кэша.
+                            if (force) Log.i("Schedule", "Аудитория $code: расписания уже обновлены кнопкой")
                             val got = runCatching {
                                 withContext(Dispatchers.IO) { api.fetchAudience(code) }
                             }.onSuccess { raw -> runCatching { apply(raw) } }
@@ -819,11 +914,45 @@ fun ScheduleScreen(
 
     LaunchedEffect(group, teacherCode, role) { load(false) }
 
+    // Поколение данных выросло — перечитываем кэш и пересчитываем дату.
+    // Именно этого не хватало: refreshCurrent() писал в кэш, но этот экран
+    // был отдельным composable со своим состоянием и показывал старое.
+    LaunchedEffect(dataGeneration) {
+        if (dataGeneration > 0) {
+            Log.i("Schedule", "Поколение $dataGeneration — перечитываю")
+            // Именно false, а не true: расписания уже обновлены выше, в
+            // refreshCurrent(). С true экран аудитории уходил в СВОЙ второй
+            // полный проход по 344 группам — последовательно, по одному, от
+            // чего обновление на 344 группы занимало минуты вместо 35 секунд,
+            // а кнопка выглядела зависшей. Здесь нужен только пересчёт кэша.
+            load(false)
+            // Дату считаем здесь, ПОСЛЕ load. Внутри load() она считалась в
+            // конце, но ветка аудитории возвращалась из кэша раньше, чем
+            // долетели записи расписаний, и подпись отставала на минуты.
+            // Повтор с задержкой: пока идёт запись 344 расписаний, метка
+            // едет вперёд — ловим последнюю, уже после записи.
+            repeat(3) {
+                val ts = withContext(Dispatchers.IO) { api.lastUpdatedAt(role, group) }
+                lastUpdated = ts
+                delay(1200)
+            }
+        }
+    }
+
     // Только строка текущей учебной недели (DayNumber == weekType).
     // Фильтр по чётности тут давал бы дубли: строки 0 и 2 у части групп
     // содержат одинаковые пары, а у ИВТ-11/ПИН-11 — разные.
-    val weekLessons = remember(lessons, weekRow) {
-        lessons.filter { (it.dayNumber ?: 0) == weekRow }
+    // Короткая дата «02.10» для компактных подписей (табы, чипы).
+    fun dateShort(day: Int, offset: Int, startIso: String): String {
+        val d = WeekType.dateOfWeekDay(offset, day, startIso) ?: return ""
+        return String.format("%02d.%02d", d.get(Calendar.DAY_OF_MONTH), d.get(Calendar.MONTH) + 1)
+    }
+
+    val activeWeekRow = remember(weekOffset, semestrStartIso) {
+        WeekType.shiftedRow(weekOffset, semestrStartIso)
+    }
+    val weekLessons = remember(lessons, activeWeekRow) {
+        lessons.filter { (it.dayNumber ?: 0) == activeWeekRow }
     }
     // Ключи byDay и индекс todayDay должны быть НА ОДНОЙ шкале.
     //
@@ -853,13 +982,64 @@ fun ScheduleScreen(
                                 append(role.title.removePrefix("Я "))
                                 append(" • ")
                                 append(if (semestr.isBlank()) "Загрузка…" else semestr)
-                                append(" • $weekName")
+                                append(" • ")
+                                // Сдвинутая неделя видна в самом заголовке, а не
+                                // только в подписи снизу: иначе непонятно, что
+                                // нажали именно на «следующую неделю».
+                                append(
+                                    if (weekOffset == 0) weekName
+                                    else "${WeekType.shiftedName(weekOffset, semestrStartIso)} · ${if (weekOffset > 0) "+" else ""}$weekOffset"
+                                )
                             },
                             color = Color(0xFFBBDEFB), fontSize = 12.sp
                         )
                     }
                 },
                 actions = {
+                    // Кнопка обновления — ПЕРВОЙ в шапке и на КАЖДОМ экране.
+                    // Просьба: «где бы я ни находился, обновлялось всё».
+                    // Показывает прогресс, потому что 344 группы — это ~35 секунд,
+                    // и молчащее ожидание выглядит как зависание.
+                    // Переключатель учебной недели. Тип недели ходит по кругу
+                    // 0..3, поэтому «следующая» — это +1 по модулю 4, а не
+                    // следующая календарная: кнопка показывает расписание той
+                    // недели, которая будет через неделю, а не «ту же неделю
+                    // с другого дня». Работает без сети — данные уже в кэше.
+                    IconButton(
+                        onClick = { weekOffset-- },
+                        enabled = weekOffset > -4
+                    ) {
+                        Text("\u2039", color = Color.White, fontSize = 22.sp)
+                    }
+                    IconButton(
+                        onClick = { weekOffset++ },
+                        enabled = weekOffset < 4
+                    ) {
+                        Text("\u203A", color = Color.White, fontSize = 22.sp)
+                    }
+                    // «К текущей неделе» — только когда ушли со сдвига, чтобы не
+                    // занимать место в шапке лишней кнопкой.
+                    //
+                    // ВАЖНО: кнопка стоит ПОСЛЕ «›», а не перед «Обновить».
+                    // Иначе при первом же нажатии «›» она появлялась в шапке и
+                    // сдвигала «›» влево — второе нажатие попадало уже в неё и
+                    // сбрасывало неделю вместо перехода. Проверено на устройстве:
+                    // 1-й числитель → 1-й знаменатель → снова 1-й числитель.
+                    if (weekOffset != 0) {
+                        IconButton(onClick = { weekOffset = 0 }) {
+                            Text("•", color = Color(0xFFBBDEFB), fontSize = 20.sp)
+                        }
+                    }
+                    IconButton(onClick = onRefreshAll, enabled = !refreshing) {
+                        if (refreshing) CircularProgressIndicator(
+                            Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
+                        ) else Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Обновить всё",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                     IconButton(onClick = { prefs.toggleFavFor(role, group); refreshFav() }) {
                         Text(
                             if (isFav) "★" else "☆",
@@ -889,10 +1069,11 @@ fun ScheduleScreen(
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
 
-            // ─── строка «обновлено …» + кнопка обновления ───
-            // Отдельной строкой под шапкой, а не в actions TopAppBar: там
-            // кнопка — узкий IconButton, и текст с датой рядом не влез бы,
-            // а ещё шапка и так набита («Сменить», «Роль», избранное, звёздочка).
+            // ─── строка «обновлено …» ───
+            // Кнопки здесь больше нет: она живёт в шапке, одна и та же на всех
+            // экранах (просьба: «где бы я ни находился, обновлялось всё»).
+            // Здесь остались дата и прогресс — чтобы 30 секунд ожидания
+            // показывали счётчик, а не выглядели зависанием.
             Row(
                 Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -903,29 +1084,12 @@ fun ScheduleScreen(
                     color = Color(0xFF78909C),
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(
-                    // Сначала перезагрузка, ПОТОМ пересчёт даты. Раньше стояло
-                    // `load(true); refreshLastUpdated()` — и это была гонка:
-                    // load() запускает корутину, а refreshLastUpdated() успевал
-                    // прочитать кэш ДО того, как сервер ответил и метка сменилась.
-                    // Итог: кэш обновлялся, а на экране оставалась старая дата.
-                    // refreshLastUpdated() внутри load() держит правильный порядок.
-                    onClick = { load(true) },
-                    enabled = !refreshing,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                ) {
-                    if (refreshing) {
-                        CircularProgressIndicator(
-                            Modifier.size(14.dp), strokeWidth = 2.dp, color = MIET_BLUE
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text("Обновляю…", fontSize = 12.sp, color = MIET_BLUE)
-                    } else {
-                        // Без иконки Refresh: вместе с надписью «Обновить» она
-                        // читалась как вторая кнопка. Осталась одна кнопка
-                        // с надписью — как просил.
-                        Text("Обновить", fontSize = 12.sp, color = MIET_BLUE)
-                    }
+                if (refreshNote.isNotEmpty()) {
+                    Text(
+                        refreshNote,
+                        fontSize = 11.sp,
+                        color = if (refreshing) MIET_BLUE else Color(0xFF78909C),
+                    )
                 }
             }
 
@@ -936,7 +1100,15 @@ fun ScheduleScreen(
                 FilterChip(
                     selected = !showWeek,
                     onClick = { showWeek = false },
-                    label = { Text(if (todayDay == 0) "Вс (выходной)" else "Сегодня: ${DAY_SHORT[todayDay]}", fontSize = 13.sp) }
+                    // Дата и тут: при сдвиге недели «Сегодня» вообще вводит в
+                    // заблуждение, поэтому подпись становится «Пт 02.10».
+                    label = {
+                        Text(
+                            if (todayDay == 0) "Вс (выходной)"
+                            else "Сегодня: ${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}",
+                            fontSize = 13.sp
+                        )
+                    }
                 )
                 FilterChip(
                     selected = showWeek,
@@ -968,11 +1140,14 @@ fun ScheduleScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 if (todayDay == 0) "Воскресенье — выходной"
-                                else "Сегодня ${DAY_NAMES[todayDay].lowercase()} пар нет",
+                                else "Сегодня ${WeekType.dayWithDate(todayDay, weekOffset, semestrStartIso).lowercase()} пар нет",
                                 fontSize = 16.sp, color = Color.Gray
                             )
                             Spacer(Modifier.height(4.dp))
-                            Text("$weekName", fontSize = 13.sp, color = MIET_BLUE)
+                            Text(
+                                WeekType.name(activeWeekRow),
+                                fontSize = 13.sp, color = MIET_BLUE
+                            )
                             Spacer(Modifier.height(4.dp))
                             Text("Переключи на «Вся неделя», чтобы посмотреть всё",
                                 fontSize = 12.sp, color = Color.Gray)
@@ -983,7 +1158,10 @@ fun ScheduleScreen(
                     val shown = if (showWeek) byDay else mapOf(todayDay to todayLessons)
                     val count = shown.values.sumOf { it.size }
                     Text(
-                        if (showWeek) "$count пар • $weekName" else "$count пар сегодня • $weekName",
+                        // Форму числительного: 1 пара, 2 пары, 5 пар. Раньше стояло
+                        // жёсткое «пар», и на экране аудитории читалось «1 пар».
+                        if (showWeek) "$count ${plural(count, "пара", "пары", "пар")} • ${WeekType.name(activeWeekRow)}"
+                        else "$count ${plural(count, "пара", "пары", "пар")} сегодня • ${WeekType.name(activeWeekRow)}",
                         fontSize = 12.sp, color = Color.Gray,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                     )
@@ -1003,7 +1181,10 @@ fun ScheduleScreen(
                                         Text(
                                             // day уже в нашей шкале 0..6 (0=Пн),
                                             // см. groupBy { (it.day ?: 1) - 1 } выше.
-                                            DAY_NAMES.getOrElse(day) { "День ${day + 1}" },
+                                            // С датой: «пятница 02.10.2026». Без неё
+                                            // карточки следующей недели выглядят
+                                            // как сегодняшние — при листании «›».
+                                            WeekType.dayWithDate(day, weekOffset, semestrStartIso),
                                             fontWeight = FontWeight.Bold, fontSize = 14.sp,
                                             color = if (day == todayDay) Color.White else Color(0xFF1A1A1A)
                                         )

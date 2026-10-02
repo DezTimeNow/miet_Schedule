@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
@@ -51,7 +52,10 @@ fun RolePickerScreen(
     onBack: (() -> Unit)? = null,
     onRefresh: () -> Unit = {},
     onAbout: () -> Unit = {},
-    refreshing: Boolean = false
+    refreshing: Boolean = false,
+    // Прогресс обновления: обновляются все 344 группы, это ~35 секунд.
+    // Без текста ожидание выглядит как зависшее приложение.
+    refreshNote: String = ""
 ) {
     Scaffold(
         topBar = {
@@ -65,9 +69,16 @@ fun RolePickerScreen(
                 },
                 actions = {
                     IconButton(onClick = onRefresh, enabled = !refreshing) {
+                        // Иконка Refresh, а не глиф «↻»: та же кнопка должна
+                        // выглядеть одинаково на всех экранах (просьба БОССа).
                         if (refreshing) CircularProgressIndicator(
                             Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
-                        ) else Text("\u21bb", color = Color.White, fontSize = 20.sp)
+                        ) else Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Обновить всё",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "О программе", tint = Color.White)
@@ -80,6 +91,16 @@ fun RolePickerScreen(
             Modifier.padding(pad).fillMaxSize().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.Center
         ) {
+            // Прогресс обновления: обновляются все 344 группы — это ~35 секунд.
+            // Без этой строки ожидание выглядит как зависшее приложение.
+            if (refreshing && refreshNote.isNotEmpty()) {
+                Text(
+                    refreshNote,
+                    fontSize = 12.sp,
+                    color = MIET_BLUE,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp)
+                )
+            }
             if (current != null) {
                 RoleCard(Role.entries.first { it == current }, true, { onPick(current) })
                 Spacer(Modifier.height(20.dp))

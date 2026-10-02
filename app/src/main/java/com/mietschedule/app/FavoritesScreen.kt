@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Refresh
 
 /**
  * Избранное: группы, преподаватели и аудитории на трёх вкладках.
@@ -51,7 +53,10 @@ import androidx.compose.ui.unit.sp
 fun FavoritesScreen(
     prefs: GroupPrefs,
     onOpen: (Role, String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onRefresh: () -> Unit = {},
+    refreshing: Boolean = false,
+    refreshNote: String = ""
 ) {
     // Читаем один раз при входе: дальше перечитываем после каждого изменения.
     var tick by remember { mutableStateOf(0) }
@@ -89,6 +94,21 @@ fun FavoritesScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Text("\u2039", color = Color.White, fontSize = 28.sp)
+                    }
+                },
+                // Кнопка обновления на КАЖДОМ экране — требование БОССа.
+                // Из избранного тоже: иначе обновиться можно только в два
+                // тапа назад, и человек сдаётся и ждёт «само».
+                actions = {
+                    IconButton(onClick = onRefresh, enabled = !refreshing) {
+                        if (refreshing) CircularProgressIndicator(
+                            Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
+                        ) else Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Обновить всё",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
             )

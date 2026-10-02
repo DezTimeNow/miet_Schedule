@@ -47,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.Refresh
 
 
 /**
@@ -64,6 +65,9 @@ fun AboutScreen(
     versionCode: Int,
     onBack: () -> Unit,
     onUpdateFound: (UpdateInfo) -> Unit = {},
+    onRefresh: () -> Unit = {},
+    refreshing: Boolean = false,
+    refreshNote: String = "",
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -85,6 +89,21 @@ fun AboutScreen(
                 navigationIcon = {
                     androidx.compose.material3.IconButton(onClick = onBack) {
                         Text("\u2039", color = Color.White, fontSize = 28.sp)
+                    }
+                },
+                // Кнопка обновления на КАЖДОМ экране — требование БОССа.
+                // «О программе» тоже: если человек сюда зашёл, он тоже должен
+                // иметь возможность обновить данные, не возвращаясь назад.
+                actions = {
+                    androidx.compose.material3.IconButton(onClick = onRefresh, enabled = !refreshing) {
+                        if (refreshing) androidx.compose.material3.CircularProgressIndicator(
+                            Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
+                        ) else androidx.compose.material3.Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Обновить всё",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
             )
