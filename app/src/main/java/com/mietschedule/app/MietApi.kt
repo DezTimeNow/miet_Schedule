@@ -63,10 +63,19 @@ class MietApi(private val context: Context) {
         }
         val raw = post(ApiPaths.GROUPS, null)
         val list = GsonHolder.gson.fromJson(raw, Array<String>::class.java).toList()
-        prefs.edit()
-            .putString("groups", list.joinToString("|||"))
-            .putLong("groups_ts", System.currentTimeMillis())
-            .apply()
+        // Пустой ответ НЕ кэшируем. Сервер при сбое может отдать [], и раньше
+        // такой список записывался как обычный: на неделю (TTL) пропадали все
+        // группы, до следующего принудительного обновления. Теперь кэш
+        // трогается только непустым ответом, а вызывающий сам разберётся,
+        // что список пуст.
+        if (list.isNotEmpty()) {
+            prefs.edit()
+                .putString("groups", list.joinToString("|||"))
+                .putLong("groups_ts", System.currentTimeMillis())
+                .apply()
+        } else {
+            Log.w("MietApi", "Список групп пуст, кэш не трогаем")
+        }
         return list
     }
 
