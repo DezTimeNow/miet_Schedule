@@ -144,7 +144,7 @@ fun AboutScreen(
                                 onUpdateFound(result.info)
                             }
                             is UpdateCheckResult.UpToDate -> checkMessage =
-                                "Установлена свежая версия (на GitHub v${result.latestVersion})"
+                                "Установлена свежая версия (на GitHub ${result.tagName})"
                             is UpdateCheckResult.Failed -> checkMessage = result.reason
                         }
                     }

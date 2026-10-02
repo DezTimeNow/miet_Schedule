@@ -686,7 +686,7 @@ class ScheduleParseTest {
      */
     @Test
     fun `результат проверки различает актуальность и ошибку`() {
-        val upToDate: UpdateCheckResult = UpdateCheckResult.UpToDate(15)
+        val upToDate: UpdateCheckResult = UpdateCheckResult.UpToDate(15, "0.15")
         val failed: UpdateCheckResult = UpdateCheckResult.Failed("нет сети")
         val available: UpdateCheckResult = UpdateCheckResult.Available(
             UpdateInfo(
@@ -705,9 +705,11 @@ class ScheduleParseTest {
 
     @Test
     fun `актуальная версия показывает номер релиза с GitHub`() {
-        // Если на GitHub v20, а у нас v15 — честно говорим про v20, а не молчим.
-        val r = UpdateCheckResult.UpToDate(20) as UpdateCheckResult.UpToDate
+        // Если на GitHub 0.20, а у нас 0.15 — честно говорим про 0.20, и
+        // показываем именно тот тег, который опубликован, без подстановки «v».
+        val r = UpdateCheckResult.UpToDate(20, "0.20") as UpdateCheckResult.UpToDate
         assertEquals(20, r.latestVersion)
+        assertEquals("0.20", r.tagName)
     }
 
     // ───────────── дата последнего обновления ─────────────

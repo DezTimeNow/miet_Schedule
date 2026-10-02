@@ -93,7 +93,7 @@ object UpdateChecker {
                     "Не удалось разобрать номер версии из тега «${info.tagName}»."
                 )
             if (latest <= currentVersionCode) {
-                UpdateCheckResult.UpToDate(latest)
+                UpdateCheckResult.UpToDate(latest, info.tagName)
             } else {
                 UpdateCheckResult.Available(info)
             }
@@ -285,8 +285,12 @@ data class UpdateInfo(
 sealed interface UpdateCheckResult {
     data class Available(val info: UpdateInfo) : UpdateCheckResult
 
-    /** [latestVersion] — какой релиз сейчас на GitHub (для честного сообщения). */
-    data class UpToDate(val latestVersion: Int) : UpdateCheckResult
+    /**
+     * [latestVersion] — номер последнего релиза (для сравнения с нашей сборкой).
+     * [tagName] — сам тег релиза: в альфе он читается как «0.30», и подставлять
+     * «v» + номер значило бы показывать пользователю несуществующее имя.
+     */
+    data class UpToDate(val latestVersion: Int, val tagName: String) : UpdateCheckResult
 
     data class Failed(val reason: String) : UpdateCheckResult
 }
