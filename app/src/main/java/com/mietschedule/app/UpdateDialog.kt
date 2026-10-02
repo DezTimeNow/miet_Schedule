@@ -51,6 +51,28 @@ import kotlinx.coroutines.launch
 enum class UpdateStage { IDLE, DOWNLOADING, ERROR }
 
 /**
+ * Текст релиза приходит из GitHub как Markdown, где перевод строки — HTML-энтития
+ * `&#10;`. Compose рисует такой текст буквально, и пользователь видит «&#10;»
+ * вместо разрыва строки. Здесь разворачиваем энтитии в нормальный текст,
+ * снимаем Markdown-заголовки и лишние пустые строки.
+ */
+internal fun cleanReleaseNotes(raw: String): String {
+    val decoded = raw
+        .replace("&#13;", "")
+        .replace("&#10;", "\n")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+    return decoded.lineSequence()
+        .map { it.trim().trimStart('#', '*', '-', ' ').trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString("\n")
+        .take(1200)
+}
+
+/**
  * Проверка при запуске + диалог.
  *
  * Вызывается один раз из MainActivity. Само открытие приложения не ждёт сеть:
@@ -152,8 +174,10 @@ fun UpdatePromptHost(
                     }
 
                     UpdateStage.IDLE -> {
-                        // Текст релиза — то, что БОСС пишет в release notes.
-                        val notes = info.notes.trim()
+                        // Текст релиза — то, что БОСС пишет в release notes,
+                        // но через cleanReleaseNotes: GitHub отдаёт переводы
+                        // строк как &#10;, и Compose показал бы их буквально.
+                        val notes = cleanReleaseNotes(info.notes)
                         if (notes.isNotEmpty()) {
                             Text(
                                 notes.take(1200),

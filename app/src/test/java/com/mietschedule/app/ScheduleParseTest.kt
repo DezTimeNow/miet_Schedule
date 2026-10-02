@@ -617,4 +617,30 @@ class ScheduleParseTest {
         assertTrue(lastCheckLabel(now - 3 * 3_600_000).contains("3 ч"))
         assertTrue(lastCheckLabel(now - 2 * 86_400_000L).contains("2 дн"))
     }
+
+    /**
+     * Регрессия: текст релиза показывался как «Сборка 14&#10;&#10;Тестовая…».
+     * GitHub отдаёт перевод строки HTML-энтитией, и Compose рисовал её буквально.
+     */
+    @Test
+    fun `энтитии переводов строк в заметках релиза разворачиваются`() {
+        val raw = "Сборка 14 (versionCode 14).&#10;&#10;Тестовая сборка."
+        val out = cleanReleaseNotes(raw)
+        assertFalse("энтития &#10; осталась в тексте", out.contains("&#10;"))
+        assertTrue(out.contains("Сборка 14 (versionCode 14)."))
+        assertTrue(out.contains("Тестовая сборка."))
+    }
+
+    @Test
+    fun `markdown-заголовки и лишние пробелы убираются из заметок`() {
+        assertEquals("Заголовок", cleanReleaseNotes("## Заголовок"))
+        assertEquals("Пункт", cleanReleaseNotes("* Пункт"))
+        assertEquals("Первый\nВторой", cleanReleaseNotes("Первый\n\n\n   Второй  "))
+    }
+
+    @Test
+    fun `пустые заметки релиза дают пустой текст`() {
+        assertEquals("", cleanReleaseNotes(""))
+        assertEquals("", cleanReleaseNotes("   \n  \n "))
+    }
 }
