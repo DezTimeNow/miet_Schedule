@@ -45,6 +45,11 @@ class AppColors(
     val dim: Color,
     val dayHeader: Color,
     val onDayHeader: Color,
+    // Корпус и выводы микросхемы в мини-игре. Отдельные цвета, потому что
+    // на белой и на чёрной теме один оттенок читается по-разному.
+    val chipBody: Color,
+    val chipBodyDeep: Color,
+    val chipPin: Color,
 ) {
     companion object {
         val Light = AppColors(
@@ -62,6 +67,9 @@ class AppColors(
             dim = ScheduleColorScheme.dim,
             dayHeader = ScheduleColorScheme.dayHeader,
             onDayHeader = ScheduleColorScheme.onDayHeader,
+            chipBody = ScheduleColorScheme.chipBody,
+            chipBodyDeep = ScheduleColorScheme.chipBodyDeep,
+            chipPin = ScheduleColorScheme.chipPin,
         )
 
         val Dark = AppColors(
@@ -79,6 +87,9 @@ class AppColors(
             dim = ScheduleColorScheme.darkDim,
             dayHeader = ScheduleColorScheme.darkDayHeader,
             onDayHeader = ScheduleColorScheme.darkOnDayHeader,
+            chipBody = ScheduleColorScheme.darkChipBody,
+            chipBodyDeep = ScheduleColorScheme.darkChipBodyDeep,
+            chipPin = ScheduleColorScheme.darkChipPin,
         )
     }
 }
