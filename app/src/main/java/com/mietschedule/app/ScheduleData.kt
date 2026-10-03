@@ -40,13 +40,31 @@ internal fun rememberScheduleData(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    /**
+     * Разобрать ответ сервера и показать его.
+     *
+     * Разбор JSON уходит на Dispatchers.IO: неделя МИЭТ — это несколько
+     * сотен объектов, и на главном потоке это давало «Skipped 35 frames»
+     * при каждом открытии расписания. Состояние `lessons`/`times` пишется
+     * уже после разбора, из IO-потока, что Compose допускает через
+     * mutableStateOf, но результат применения наружу отдаётся через
+     * `onLoaded` — вызовы перерисовки остаются на главном потоке.
+     */
     fun apply(raw: String) {
-        val resp = GsonHolder.gson.fromJson(raw, ScheduleResponse::class.java)
-        lessons = resp.data ?: emptyList()
-        // Таблица времени: серверная, но с подстраховкой от самих пар — у части
-        // аудиторий сервер отдаёт пустой Times, и карточка осталась бы без времени.
-        times = mergeTimes(resp.times, lessons)
-        semestr = resp.semestr ?: ""
+        scope.launch {
+            val resp = withContext(Dispatchers.IO) {
+                runCatching { GsonHolder.gson.fromJson(raw, ScheduleResponse::class.java) }
+                    .getOrNull()
+            } ?: return@launch
+            lessons = resp.data ?: emptyList()
+            // Таблица времени: серверная, но с подстраховкой от самих пар — у части
+            // аудиторий сервер отдаёт пустой Times, и карточка осталась бы без времени.
+            times = mergeTimes(resp.times, lessons)
+            semestr = resp.semestr ?: ""
+            // onLoaded здесь НЕ вызывается: он один на все ветки ролей,
+            // в конце load(). Дублировать его значило бы обновлять подпись
+            // дважды на каждую загрузку.
+        }
     }
 
     fun load(force: Boolean) {
@@ -62,7 +80,13 @@ internal fun rememberScheduleData(
                     // если он ПРОТУХ (6 часов). Раньше здесь стояло только
                     // `lessons.isEmpty()`, и при непустом кэше приложение
                     // месяцами показывало данные, изменившиеся на сайте.
-                    val needNet = force || api.scheduleExpired(group)
+                    // scheduleExpired читает файл кэша, поэтому тоже на IO.
+                    // Раньше он звался с главного потока вместе с проверкой
+                    // срока годности — это часть тех же 35 пропущенных кадров
+                    // на старте, что и разбор JSON ниже.
+                    val needNet = force || withContext(Dispatchers.IO) {
+                        api.scheduleExpired(group)
+                    }
                     if (needNet) {
                         // Отметка «проверено» ставится ИМЕННО здесь, перед
                         // запросом. Раньше она стояла в начале load(), и тогда

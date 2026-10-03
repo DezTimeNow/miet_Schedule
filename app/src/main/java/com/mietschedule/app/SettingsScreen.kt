@@ -114,9 +114,7 @@ fun SettingsScreen(
                         if (remindersOn) {
                             ReminderScheduler.leadLabel(leadMinutes) +
                                 " до начала, для избранных групп. " +
-                                "Работает без интернета." +
-                                if (ReminderScheduler.canUseExact(ctx)) "" else
-                                    " Android может задержать на несколько минут."
+                                "Работает без интернета."
                         } else {
                             "Выключены. Включите, чтобы не пропускать пары " +
                                 "избранных групп."
