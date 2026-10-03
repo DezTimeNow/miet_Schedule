@@ -88,6 +88,8 @@ class UpdateDialogHandle {
  * снимаем Markdown-заголовки и лишние пустые строки.
  */
 internal fun cleanReleaseNotes(raw: String): String {
+    // Порядок замен важен: `&amp;` разбирается последним. Иначе `&amp;lt;`
+    // превратится в `<`, и в тексте релиза окажется символ, которого там нет.
     val decoded = raw
         .replace("&#13;", "")
         .replace("&#10;", "\n")

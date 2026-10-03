@@ -78,21 +78,29 @@ private const val RESERVED_FOR_ACTIONS = 208
  * и переносился на вторую строку, наезжая на подзаголовок («АУДИТОРИ Я»).
  * Ширина берётся у LocalConfiguration/Density, поэтому результат
  * одинаков при любом разрешении: считаем в dp, а не в пикселях.
+ *
+ * Считаем в обычных Float, а не в `sp`: единица измерения — @Composable
+ * функция, поэтому версии на TextUnit нельзя проверить обычным тестом.
+ * Вызывающий код переводит число в sp сам.
  */
-@Composable
-private fun adaptiveTitleSize(availableDp: Int): TextUnit = when {
-    availableDp < 330 -> 14.sp
-    availableDp < 380 -> 16.sp
-    availableDp < 460 -> 17.sp
-    else -> 18.sp
+internal fun titleSizeSp(availableDp: Int): Float = when {
+    availableDp < 330 -> 14f
+    availableDp < 380 -> 16f
+    availableDp < 460 -> 17f
+    else -> 18f
+}
+
+internal fun subtitleSizeSp(availableDp: Int): Float = when {
+    availableDp < 330 -> 10f
+    availableDp < 380 -> 11f
+    else -> 12f
 }
 
 @Composable
-private fun adaptiveSubtitleSize(availableDp: Int): TextUnit = when {
-    availableDp < 330 -> 10.sp
-    availableDp < 380 -> 11.sp
-    else -> 12.sp
-}
+internal fun adaptiveTitleSize(availableDp: Int): TextUnit = titleSizeSp(availableDp).sp
+
+@Composable
+internal fun adaptiveSubtitleSize(availableDp: Int): TextUnit = subtitleSizeSp(availableDp).sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
