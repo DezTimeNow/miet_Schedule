@@ -265,4 +265,26 @@ class FavoritesTest {
             .substringBefore("\n        }\n    }")
         assertTrue("У студента ключи не очищаются", effect.contains("Role.STUDENT"))
     }
+
+    @Test
+    fun `аудитория из избранного ищется в обоих источниках`() {
+        // Регрессия, найденная через отчёт об ошибке из приложения.
+        // Локальный список аудиторий собирался только на экране выбора и
+        // не сохранялся, поэтому при запуске и при открытии из избранного
+        // поиск кода смотрел лишь в /audiences — там 136 аудиторий из 194,
+        // и корпус 8 (8102, 8109, 8307) не находился вовсе.
+        val api = src("MietApi.kt")
+        assertTrue(
+            "Нет чтения локального списка аудиторий",
+            api.contains("fun localAudiences()"),
+        )
+        assertTrue(
+            "Нет сохранения локального списка",
+            api.contains("fun saveLocalAudiences("),
+        )
+        assertTrue(
+            "Локальный список аудиторий нигде не сохраняется",
+            src("PickersScreen.kt").contains("saveLocalAudiences"),
+        )
+    }
 }

@@ -333,6 +333,11 @@ class MietApi(private val context: Context) {
     // где /data?audience= отдаёт 0 пар. Для них расписание собирается локально
     // из кэша групп — см. [localLessonsOf].
 
+    // Список аудиторий из кэша расписаний. Без этого ключа поиск кода
+    // аудитории при запуске видел только эндпоинт /audiences, а из него
+    // 136 аудиторий из 194.
+    private val KEY_AUD_LOCAL = "audiences_local"
+
     private val KEY_AUD_IDX = "audience_index"
     private val KEY_AUD_IDX_TS = "audience_index_ts"
 
@@ -405,6 +410,38 @@ class MietApi(private val context: Context) {
         val want = roomKey(name)
         if (want.isEmpty()) return null
         return cachedAudiences().firstOrNull { roomKey(it.name) == want }?.code
+            ?: localAudiences().firstOrNull { roomKey(it.name) == want }?.code
+    }
+
+    /**
+     * Аудитории, найденные в кэше расписаний групп.
+     *
+     * Отдельный кэш, а не пустая функция: список собирался только на экране
+     * выбора аудитории и больше нигде не сохранялся. Из-за этого поиск кода
+     * при запуске приложения и при открытии из избранного смотрел лишь в
+     * /audiences, где 136 аудиторий из 194 нет. Аудитории корпуса 8
+     * (8102, 8109, 8307…) в эндпоинте не значатся вовсе, и для них поиск
+     * заканчивался «Не удалось определить аудиторию».
+     *
+     * Правка найдена через отчёт об ошибке: приложение отправило его само,
+     * с этим самым текстом ошибки.
+     *
+     * Здесь нужен кэш, а не [deriveAudiencesFromGroups]: та функция ходит в
+     * сеть (344 запроса) и объявлена suspend, а ключ аудитории ищется
+     * синхронно — при старте приложения и при открытии из избранного.
+     */
+    fun localAudiences(): List<Audience> =
+        prefs.getString(KEY_AUD_LOCAL, null)?.let {
+            runCatching { GsonHolder.gson.fromJson(it, Array<Audience>::class.java).toList() }
+                .getOrNull() ?: emptyList()
+        } ?: emptyList()
+
+    /** Сохранить локальный список, чтобы поиск кода работал на всех экранах. */
+    fun saveLocalAudiences(list: List<Audience>) {
+        if (list.isEmpty()) return
+        prefs.edit()
+            .putString(KEY_AUD_LOCAL, GsonHolder.gson.toJson(list.toTypedArray()))
+            .apply()
     }
 
     fun loadAudienceIndex(): String? = prefs.getString(KEY_AUD_IDX, null)
