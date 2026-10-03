@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.mutableStateOf
 
 /**
  * Экран выбора группы: направление → группа.
@@ -133,7 +135,7 @@ fun GroupPickerScreen(
                 }
                 error != null && groups.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(error!!, color = Color(0xFFC62828), fontSize = 14.sp, modifier = Modifier.padding(24.dp))
+                        Text(error!!, color = LocalAppColors.current.error, fontSize = 14.sp, modifier = Modifier.padding(24.dp))
                         Button(onClick = { error = null; loading = true }) { Text("Повторить") }
                     }
                 }
@@ -141,7 +143,7 @@ fun GroupPickerScreen(
                     Text(
                         if (query.isBlank()) "$total ${plural(total, "группа", "группы", "групп")} в ${byCode.size} ${plural(byCode.size, "маркировке", "маркировках", "маркировках")}"
                         else "Найдено: $total",
-                        fontSize = 12.sp, color = Color.Gray,
+                        fontSize = 12.sp, color = LocalAppColors.current.muted,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                     )
 
@@ -155,7 +157,7 @@ fun GroupPickerScreen(
                             item(key = "favlist") {
                                 Card(
                                     Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1)),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                                     elevation = CardDefaults.cardElevation(1.dp)
                                 ) {
                                     Column(Modifier.padding(10.dp)) {
@@ -176,7 +178,7 @@ fun GroupPickerScreen(
                             item(key = "code_$code") {
                                 Card(
                                     Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                     elevation = CardDefaults.cardElevation(1.dp)
                                 ) {
                                     Column(Modifier.padding(vertical = 4.dp)) {
@@ -190,7 +192,7 @@ fun GroupPickerScreen(
                                         ) {
                                             Column(Modifier.weight(1f)) {
                                                 Text(code, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                                Text("${list.size} ${plural(list.size, "группа", "группы", "групп")}", fontSize = 11.sp, color = Color.Gray)
+                                                Text("${list.size} ${plural(list.size, "группа", "группы", "групп")}", fontSize = 11.sp, color = LocalAppColors.current.muted)
                                             }
                                             Text(
                                                 if (openCode == code) "\u2212" else "+",
@@ -252,9 +254,9 @@ private fun FavHeader(count: Int) {
         Modifier.fillMaxWidth().padding(start = 14.dp, top = 8.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("★ Избранное", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+        Text("★ Избранное", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.favStar)
         Spacer(Modifier.width(6.dp))
-        Text("$count", fontSize = 11.sp, color = Color.Gray)
+        Text("$count", fontSize = 11.sp, color = LocalAppColors.current.muted)
     }
 }
 
@@ -262,7 +264,7 @@ private fun FavHeader(count: Int) {
 private fun FavChip(group: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(
         modifier.padding(3.dp).clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFECB3))
+        colors = CardDefaults.cardColors(containerColor = LocalAppColors.current.fav)
     ) {
         Text(
             group, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
@@ -282,7 +284,7 @@ private fun GroupRow(
     Card(
         Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable { onClick() },
         colors = CardDefaults.cardColors(
-            containerColor = if (isCurrent) Color(0xFFBBDEFB) else Color(0xFFE3F2FD)
+            containerColor = if (isCurrent) LocalAppColors.current.currentGroup else LocalAppColors.current.rowGroup
         )
     ) {
         Row(
@@ -296,7 +298,7 @@ private fun GroupRow(
             Box(Modifier.clickable { onFav() }) {
                 Text(
                     if (isFav) "★" else "☆",
-                    fontSize = 17.sp, color = if (isFav) Color(0xFFE65100) else Color(0xFFBDBDBD)
+                    fontSize = 17.sp, color = if (isFav) LocalAppColors.current.favStar else LocalAppColors.current.starInactive
                 )
             }
         }

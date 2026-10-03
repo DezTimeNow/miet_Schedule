@@ -103,13 +103,13 @@ fun RolePickerScreen(
                 )
                 Text(
                     "Посмотреть расписание другой ролью",
-                    fontSize = 12.sp, color = Color.Gray,
+                    fontSize = 12.sp, color = LocalAppColors.current.muted,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
             } else {
                 Text(
                     "Выбери, чьё расписание смотрим",
-                    fontSize = 14.sp, color = Color.Gray,
+                    fontSize = 14.sp, color = LocalAppColors.current.muted,
                     modifier = Modifier.padding(bottom = 14.dp)
                 )
             }
@@ -150,7 +150,7 @@ private fun RoleCard(role: Role, selected: Boolean, onClick: () -> Unit) {
             .clip(RoundedCornerShape(14.dp))
             .clickable { onClick() },
         colors = CardDefaults.cardColors(
-            containerColor = if (selected) Color(0xFFBBDEFB) else Color.White
+            containerColor = if (selected) LocalAppColors.current.currentGroup else MaterialTheme.colorScheme.surface
         ),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
@@ -162,7 +162,7 @@ private fun RoleCard(role: Role, selected: Boolean, onClick: () -> Unit) {
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(role.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(role.hint, fontSize = 12.sp, color = Color.Gray)
+                Text(role.hint, fontSize = 12.sp, color = LocalAppColors.current.muted)
             }
             Text(
                 if (selected) "\u2713" else "\u203a",

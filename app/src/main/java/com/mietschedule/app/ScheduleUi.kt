@@ -38,6 +38,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.mutableStateOf
 
 /**
  * Экран расписания и карточка пары.
@@ -285,14 +289,14 @@ fun ScheduleScreen(
                 Text(
                     "Обновлено: ${LastUpdated.label(lastUpdated)}",
                     fontSize = 11.sp,
-                    color = Color(0xFF78909C),
+                    color = LocalAppColors.current.muted,
                     modifier = Modifier.weight(1f),
                 )
                 if (refreshNote.isNotEmpty()) {
                     Text(
                         refreshNote,
                         fontSize = 11.sp,
-                        color = if (refreshing) MIET_BLUE else Color(0xFF78909C),
+                        color = if (refreshing) MIET_BLUE else LocalAppColors.current.muted,
                     )
                 }
             }
@@ -404,15 +408,15 @@ fun ScheduleScreen(
 
             if (error != null) {
                 Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                     colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))) {
-                    Text(error!!, Modifier.padding(12.dp), color = Color(0xFFC62828), fontSize = 13.sp)
+                     colors = CardDefaults.cardColors(containerColor = LocalAppColors.current.errorContainer)) {
+                    Text(error!!, Modifier.padding(12.dp), color = LocalAppColors.current.error, fontSize = 13.sp)
                 }
             }
 
             when {
                 loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 weekLessons.isEmpty() && error == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text("Расписание не найдено для $group", color = Color.Gray, fontSize = 14.sp)
+                    Text("Расписание не найдено для $group", color = LocalAppColors.current.muted, fontSize = 14.sp)
                 }
                 !showWeek && todayLessons.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -423,7 +427,7 @@ fun ScheduleScreen(
                                     todayDay == 0 -> "Воскресенье — выходной"
                                     else -> "Сегодня ${WeekType.dayWithDate(todayDay, weekOffset, semestrStartIso).lowercase()} пар нет"
                                 },
-                                fontSize = 16.sp, color = Color.Gray
+                                fontSize = 16.sp, color = LocalAppColors.current.muted
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
@@ -432,7 +436,7 @@ fun ScheduleScreen(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text("Переключи на «Вся неделя», чтобы посмотреть всё",
-                                fontSize = 12.sp, color = Color.Gray)
+                                fontSize = 12.sp, color = LocalAppColors.current.muted)
                         }
                     }
                 }
@@ -446,7 +450,7 @@ fun ScheduleScreen(
                         else "$count ${plural(count, "пара", "пары", "пар")}" +
                             (if (isCurrentWeek) " сегодня" else "") +
                             " • ${WeekType.name(activeWeekRow)}",
-                        fontSize = 12.sp, color = Color.Gray,
+                        fontSize = 12.sp, color = LocalAppColors.current.muted,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                     )
                     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
@@ -466,7 +470,7 @@ fun ScheduleScreen(
                                     Box(
                                         Modifier
                                             .clip(RoundedCornerShape(6.dp))
-                                            .background(if (day == markedDay) MIET_BLUE else Color(0xFFE3F2FD))
+                                            .background(if (day == markedDay) MIET_BLUE else LocalAppColors.current.rowGroup)
                                             .padding(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
                                         Text(
@@ -477,7 +481,7 @@ fun ScheduleScreen(
                                             // как сегодняшние — при листании «›».
                                             WeekType.dayWithDate(day, weekOffset, semestrStartIso),
                                             fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                                            color = if (day == markedDay) Color.White else Color(0xFF1A1A1A)
+                                            color = if (day == markedDay) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface
                                         )
                                     }
                                     if (day == markedDay) {
@@ -556,7 +560,7 @@ fun LessonCard(lesson: Lesson, times: List<PairTime>, role: Role) {
                     Text(
                         timeLabel,
                         fontSize = 10.sp,
-                        color = Color.Gray,
+                        color = LocalAppColors.current.muted,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
                         softWrap = false,
@@ -565,7 +569,7 @@ fun LessonCard(lesson: Lesson, times: List<PairTime>, role: Role) {
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(ci?.name ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF1A1A1A))
+                Text(ci?.name ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(2.dp))
                 Text(
                     buildString {
@@ -597,15 +601,15 @@ fun LessonCard(lesson: Lesson, times: List<PairTime>, role: Role) {
                             }
                         }
                     },
-                    fontSize = 12.sp, color = Color(0xFF555555)
+                    fontSize = 12.sp, color = LocalAppColors.current.dim
                 )
                 if (isLab) {
                     Spacer(Modifier.height(3.dp))
                     Box(
-                        Modifier.background(Color(0xFFFFF3E0), RoundedCornerShape(4.dp))
+                        Modifier.background(LocalAppColors.current.labBadge, RoundedCornerShape(4.dp))
                             .padding(horizontal = 6.dp, vertical = 1.dp)
                     ) {
-                        Text("ЛАБОРАТОРНАЯ", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                        Text("ЛАБОРАТОРНАЯ", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.favStar)
                     }
                 }
             }

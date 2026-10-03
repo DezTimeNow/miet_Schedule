@@ -95,7 +95,7 @@ fun FavoritesScreen(
         Column(Modifier.padding(pad).fillMaxSize()) {
             TabRow(
                 selectedTabIndex = tab,
-                containerColor = Color.White,
+                containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MIET_BLUE
             ) {
                 tabs.forEachIndexed { i, (_, pair) ->
@@ -109,7 +109,7 @@ fun FavoritesScreen(
                                     if (pair.second == 0) "—"
                                     else "${pair.second} " + plural(pair.second, "", "", "шт."),
                                     fontSize = 10.sp,
-                                    color = Color.Gray
+                                    color = LocalAppColors.current.muted
                                 )
                             }
                         }
@@ -129,7 +129,7 @@ fun FavoritesScreen(
                         Icon(
                             Icons.Outlined.StarBorder,
                             contentDescription = null,
-                            tint = Color(0xFFBDBDBD),
+                            tint = LocalAppColors.current.starInactive,
                             modifier = Modifier.size(56.dp)
                         )
                         Text(
@@ -138,7 +138,7 @@ fun FavoritesScreen(
                                 Role.TEACHER -> "Добавь преподавателя — нажми на звезду в списке"
                                 else -> "Добавь аудиторию — нажми на звезду в списке"
                             },
-                            color = Color.Gray, fontSize = 13.sp,
+                            color = LocalAppColors.current.muted, fontSize = 13.sp,
                             modifier = Modifier.padding(16.dp)
                         )
                     }
@@ -160,7 +160,7 @@ fun FavoritesScreen(
                                     Role.TEACHER -> "преподаватель"
                                     else -> "аудитория"
                                 }
-                                Text(label, fontSize = 11.sp, color = Color.Gray)
+                                Text(label, fontSize = 11.sp, color = LocalAppColors.current.muted)
                             }
                             IconButton(onClick = {
                                 prefs.toggleFavFor(current.first, value)
@@ -169,7 +169,7 @@ fun FavoritesScreen(
                                 Icon(
                                     Icons.Filled.Star,
                                     contentDescription = "Убрать из избранного",
-                                    tint = Color(0xFFE65100),
+                                    tint = LocalAppColors.current.favStar,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }

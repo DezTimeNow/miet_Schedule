@@ -5,6 +5,8 @@ import androidx.compose.runtime.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 
 /**
  * СОСТОЯНИЕ РАСПИСАНИЯ И ЕГО ЗАГРУЗКА.

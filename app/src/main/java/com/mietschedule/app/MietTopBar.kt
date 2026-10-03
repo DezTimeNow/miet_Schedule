@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material3.MaterialTheme
 
 /**
  * Ширина, которую занимает стрелка «‹» в шапке.
@@ -124,7 +125,7 @@ fun MietTopBar(
         navigationIcon = {
             if (onBack != null) {
                 IconButton(onClick = onBack) {
-                    Text("‹", color = Color.White, fontSize = 28.sp)
+                    Text("‹", color = MaterialTheme.colorScheme.surface, fontSize = 28.sp)
                 }
             } else {
                 Spacer(Modifier.width(BACK_SLOT))
@@ -146,7 +147,7 @@ fun MietTopBar(
                 val subtitleSp = adaptiveSubtitleSize(availDp)
                 Text(
                     text = title,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.surface,
                     fontSize = titleSp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -156,7 +157,7 @@ fun MietTopBar(
                 )
                 Text(
                     text = subtitle,
-                    color = Color(0xFFBBDEFB),
+                    color = LocalAppColors.current.currentGroup,
                     fontSize = subtitleSp,
                     maxLines = 1,
                     softWrap = false,
@@ -170,7 +171,7 @@ fun MietTopBar(
                     Icon(
                         imageVector = if (isFav) Icons.Filled.Star else Icons.Filled.StarBorder,
                         contentDescription = if (isFav) "Убрать из избранного" else "В избранное",
-                        tint = if (isFav) Color(0xFFFFC107) else Color(0xFFBBDEFB),
+                        tint = if (isFav) LocalAppColors.current.favStar else LocalAppColors.current.currentGroup,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -184,7 +185,7 @@ fun MietTopBar(
                     Icon(
                         Icons.Filled.List,
                         contentDescription = "Избранное",
-                        tint = Color(0xFFBBDEFB),
+                        tint = LocalAppColors.current.currentGroup,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -195,16 +196,16 @@ fun MietTopBar(
                 // 343 группы — это ~50 секунд, поэтому вместо иконки крутилка:
                 // молчащее ожидание читается как зависание.
                 if (refreshing) CircularProgressIndicator(
-                    Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White
+                    Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.surface
                 ) else Icon(
                     Icons.Filled.Refresh,
                     contentDescription = "Обновить всё",
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.size(22.dp)
                 )
             }
             TextButton(onClick = onChangeRole) {
-                Text("Роль", color = Color(0xFFBBDEFB), fontSize = 13.sp)
+                Text("Роль", color = LocalAppColors.current.currentGroup, fontSize = 13.sp)
             }
         }
     )

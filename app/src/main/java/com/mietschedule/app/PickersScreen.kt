@@ -173,7 +173,7 @@ fun TeacherPickerScreen(
 
             when {
                 error != null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text(error!!, color = Color(0xFFC62828), fontSize = 14.sp, modifier = Modifier.padding(24.dp))
+                    Text(error!!, color = LocalAppColors.current.error, fontSize = 14.sp, modifier = Modifier.padding(24.dp))
                 }
                 building -> Column(
                     Modifier.fillMaxSize().padding(24.dp),
@@ -186,7 +186,7 @@ fun TeacherPickerScreen(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "Собираю из расписаний всех групп. Один раз, потом из кэша.",
-                        fontSize = 12.sp, color = Color.Gray
+                        fontSize = 12.sp, color = LocalAppColors.current.muted
                     )
                     Spacer(Modifier.height(16.dp))
                     LinearProgressIndicator(
@@ -194,7 +194,7 @@ fun TeacherPickerScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text("Групп обработано: $done из $total", fontSize = 12.sp, color = Color.Gray)
+                    Text("Групп обработано: $done из $total", fontSize = 12.sp, color = LocalAppColors.current.muted)
                 }
                 teachers.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     CircularProgressIndicator()
@@ -211,7 +211,7 @@ fun TeacherPickerScreen(
                             item(key = "l_$letter") {
                                 Card(
                                     Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                     elevation = CardDefaults.cardElevation(1.dp)
                                 ) {
                                     Row(
@@ -227,7 +227,7 @@ fun TeacherPickerScreen(
                                             color = MIET_BLUE, modifier = Modifier.width(26.dp)
                                         )
                                         Text(
-                                            "${list.size}", fontSize = 13.sp, color = Color.Gray,
+                                            "${list.size}", fontSize = 13.sp, color = LocalAppColors.current.muted,
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(
@@ -250,7 +250,7 @@ fun TeacherPickerScreen(
                                             Text(t.name, fontSize = 13.sp)
                                             Text(
                                                 "${t.short} • ${t.pairCount} пар",
-                                                fontSize = 11.sp, color = Color.Gray
+                                                fontSize = 11.sp, color = LocalAppColors.current.muted
                                             )
                                         }
                                         IconButton(onClick = {
@@ -263,7 +263,7 @@ fun TeacherPickerScreen(
                                             Icon(
                                                 if (t.name in favs) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                                 contentDescription = "В избранное",
-                                                tint = if (t.name in favs) Color(0xFFE65100) else Color(0xFFBDBDBD),
+                                                tint = if (t.name in favs) LocalAppColors.current.favStar else LocalAppColors.current.starInactive,
                                                 modifier = Modifier.size(19.dp)
                                             )
                                         }
@@ -425,7 +425,7 @@ fun AudiencePickerScreen(
 
             when {
                 error != null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text(error!!, color = Color(0xFFC62828), fontSize = 14.sp, modifier = Modifier.padding(24.dp))
+                    Text(error!!, color = LocalAppColors.current.error, fontSize = 14.sp, modifier = Modifier.padding(24.dp))
                 }
                 loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 else -> {
@@ -440,7 +440,7 @@ fun AudiencePickerScreen(
                             item(key = "b_$bldg") {
                                 Card(
                                     Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                     elevation = CardDefaults.cardElevation(1.dp)
                                 ) {
                                     Row(
@@ -454,7 +454,7 @@ fun AudiencePickerScreen(
                                         Column(Modifier.weight(1f)) {
                                             Text(bldg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                             Text("${items_.size} " + plural(items_.size, "аудитория", "аудитории", "аудиторий"),
-                     fontSize = 11.sp, color = Color.Gray)
+                     fontSize = 11.sp, color = LocalAppColors.current.muted)
                                         }
                                         Text(
                                             if (openBldg == bldg) "\u2212" else "+",
@@ -484,7 +484,7 @@ fun AudiencePickerScreen(
                                             Icon(
                                                 if (a.name.orEmpty() in favs) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                                 contentDescription = "В избранное",
-                                                tint = if (a.name.orEmpty() in favs) Color(0xFFE65100) else Color(0xFFBDBDBD),
+                                                tint = if (a.name.orEmpty() in favs) LocalAppColors.current.favStar else LocalAppColors.current.starInactive,
                                                 modifier = Modifier.size(19.dp)
                                             )
                                         }
@@ -578,7 +578,7 @@ fun buildingOf(name: String?): String {
 @Composable
 fun FavStrip(title: String, items: List<String>, onPick: (String) -> Unit) {
     Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-        Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+        Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.favStar)
         Spacer(Modifier.height(4.dp))
         androidx.compose.foundation.lazy.LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -586,7 +586,7 @@ fun FavStrip(title: String, items: List<String>, onPick: (String) -> Unit) {
             items(items, key = { it }) { g ->
                 Card(
                     Modifier.clickable { onPick(g) },
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFECB3))
+                    colors = CardDefaults.cardColors(containerColor = LocalAppColors.current.fav)
                 ) {
                     Text(
                         g, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,

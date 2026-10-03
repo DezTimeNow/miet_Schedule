@@ -48,6 +48,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
 
 
 /**
@@ -70,6 +72,7 @@ fun AboutScreen(
     onChangeRole: () -> Unit = {},
     refreshing: Boolean = false,
     refreshNote: String = "",
+    onThemeChange: (Int) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -102,7 +105,7 @@ fun AboutScreen(
         ) {
             Card(
                 Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFBBDEFB)),
+                colors = CardDefaults.cardColors(containerColor = LocalAppColors.current.currentGroup),
                 elevation = CardDefaults.cardElevation(2.dp)
             ) {
                 Row(
@@ -112,10 +115,10 @@ fun AboutScreen(
                     Icon(Icons.Filled.Info, contentDescription = null, tint = MIET_BLUE, modifier = Modifier.size(34.dp))
                     Spacer(Modifier.width(14.dp))
                     Column {
-                        Text("Расписание МИЭТ", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1A1A1A))
+                        Text("Расписание МИЭТ", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             "Версия $versionName (сборка $versionCode)",
-                            fontSize = 13.sp, color = Color(0xFF0D47A1)
+                            fontSize = 13.sp, color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -153,7 +156,7 @@ fun AboutScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MIET_BLUE,
-                    disabledContainerColor = Color(0xFFBBDEFB),
+                    disabledContainerColor = LocalAppColors.current.currentGroup,
                 ),
                 shape = RoundedCornerShape(12.dp),
             ) {
@@ -161,7 +164,7 @@ fun AboutScreen(
                     CircularProgressIndicator(
                         modifier = Modifier.size(17.dp),
                         strokeWidth = 2.dp,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.surface,
                     )
                 } else {
                     Icon(
@@ -173,7 +176,7 @@ fun AboutScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (checking) "Проверяю…" else "Проверить обновления",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.surface,
                     fontSize = 14.sp,
                 )
             }
@@ -183,7 +186,7 @@ fun AboutScreen(
                 Text(
                     msg,
                     fontSize = 12.sp,
-                    color = Color(0xFF546E7A),
+                    color = LocalAppColors.current.muted,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
             }
@@ -193,9 +196,43 @@ fun AboutScreen(
             Text(
                 lastCheckLabel(lastChecked),
                 fontSize = 12.sp,
-                color = Color(0xFF78909C),
+                color = LocalAppColors.current.muted,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
+
+            Spacer(Modifier.height(4.dp))
+
+            // Переключатель темы. Значение берём из хранилища: экран может
+            // открыться раньше, чем MainActivity успеет прочитать настройку,
+            // поэтому показываем сохранённое, а не текущее состояние темы.
+            var currentMode by remember { mutableStateOf(loadThemeMode(ctx)) }
+
+            Text(
+                "Оформление",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(THEME_SYSTEM, THEME_LIGHT, THEME_DARK).forEach { mode ->
+                    val selected = currentMode == mode
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            currentMode = mode
+                            onThemeChange(mode)
+                        },
+                        label = { Text(themeModeLabel(mode), fontSize = 12.sp) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
 
             AboutBlock(
                 "Как это работает",
@@ -271,13 +308,13 @@ internal fun lastCheckLabel(atMillis: Long): String {
 private fun AboutBlock(title: String, body: String) {
     Card(
         Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(1.dp)
     ) {
         Column(Modifier.padding(14.dp)) {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MIET_BLUE)
             Spacer(Modifier.height(6.dp))
-            Text(body, fontSize = 13.sp, color = Color(0xFF1A1A1A))
+            Text(body, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }

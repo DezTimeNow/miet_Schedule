@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.snapshotFlow
 
 import androidx.compose.runtime.Stable
+import androidx.compose.material3.MaterialTheme
 
 
 /**
@@ -182,7 +183,7 @@ fun UpdatePromptHost(
                     Text(
                         "${info.versionLabel}${if (info.sizeLabel.isNotEmpty()) "  ·  ${info.sizeLabel}" else ""}",
                         fontSize = 12.sp,
-                        color = Color(0xFF546E7A),
+                        color = LocalAppColors.current.muted,
                     )
                 }
             }
@@ -216,19 +217,19 @@ fun UpdatePromptHost(
                         Text(
                             "Не закрывай приложение",
                             fontSize = 12.sp,
-                            color = Color(0xFF78909C),
+                            color = LocalAppColors.current.muted,
                         )
                     }
 
                     UpdateStage.ERROR -> {
                         Text("Не получилось скачать обновление", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Spacer(Modifier.height(6.dp))
-                        Text(errorText, fontSize = 13.sp, color = Color(0xFFB3261E))
+                        Text(errorText, fontSize = 13.sp, color = LocalAppColors.current.error)
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "Открой релиз в браузере:\n${UpdateChecker.REPO}",
                             fontSize = 12.sp,
-                            color = Color(0xFF546E7A),
+                            color = LocalAppColors.current.muted,
                         )
                     }
 
@@ -241,14 +242,14 @@ fun UpdatePromptHost(
                             Text(
                                 notes.take(1200),
                                 fontSize = 13.sp,
-                                color = Color(0xFF1A1A1A),
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.verticalScroll(rememberScrollState()),
                             )
                         } else {
                             Text(
                                 "Обновление с ${info.versionLabel}",
                                 fontSize = 13.sp,
-                                color = Color(0xFF1A1A1A),
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
@@ -258,7 +259,7 @@ fun UpdatePromptHost(
         confirmButton = {
             when (stage) {
                 UpdateStage.DOWNLOADING -> TextButton(onClick = {}, enabled = false) {
-                    Text("Скачиваю…", color = Color(0xFF78909C))
+                    Text("Скачиваю…", color = LocalAppColors.current.muted)
                 }
 
                 UpdateStage.ERROR -> Button(
@@ -268,7 +269,7 @@ fun UpdatePromptHost(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MIET_BLUE),
                 ) {
-                    Text("Повторить", color = Color.White)
+                    Text("Повторить", color = MaterialTheme.colorScheme.surface)
                 }
 
                 UpdateStage.IDLE -> {
@@ -294,7 +295,7 @@ fun UpdatePromptHost(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MIET_BLUE),
                         ) {
-                            Text("Разрешить установку", color = Color.White)
+                            Text("Разрешить установку", color = MaterialTheme.colorScheme.surface)
                         }
                     } else {
                         Button(
@@ -328,7 +329,7 @@ fun UpdatePromptHost(
                         ) {
                             Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Скачать", color = Color.White)
+                            Text("Скачать", color = MaterialTheme.colorScheme.surface)
                         }
                     }
                 }
@@ -341,11 +342,11 @@ fun UpdatePromptHost(
                     UpdateChecker.recordDismissed(ctx, info.versionCode)
                     closeDialog()
                 }) {
-                    Text("Позже", color = Color(0xFF78909C))
+                    Text("Позже", color = LocalAppColors.current.muted)
                 }
             }
         },
         shape = RoundedCornerShape(18.dp),
-        containerColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
     )
 }

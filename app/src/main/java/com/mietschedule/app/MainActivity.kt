@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.mutableStateOf
 
 internal val MIET_BLUE = Color(0xFF0057B8)
 
@@ -82,16 +83,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Выбор темы живёт здесь, а не в AppRoot: его должен менять экран
+        // «О программе», а тот лежит внутри AppRoot. Передаём лямбду.
+        var themeModeState by mutableStateOf(loadThemeMode(this))
 
         setContent {
             // Один диалог на всё приложение: его показывает и фоновая проверка
             // при запуске, и кнопка «Проверить обновления» в «О программе».
             val updateDialogHandle = remember { UpdateDialogHandle() }
-            MaterialTheme(colorScheme = lightColorScheme(primary = MIET_BLUE)) {
-                Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F7FA)) {
+            ScheduleTheme(themeMode = themeModeState) {
+                Surface(Modifier.fillMaxSize()) {
                     AppRoot(
                         requestedGroup = intent?.getStringExtra(EXTRA_GROUP),
                         onUpdateFound = updateDialogHandle::show,
+                        onThemeChange = { mode ->
+                            saveThemeMode(this@MainActivity, mode)
+                            themeModeState = mode
+                        },
                     )
                 // Проверка новой версии при запуске. Идёт в фоне: открытие
                 // приложения не ждёт сеть, диалог всплывёт позже, если есть.
@@ -125,6 +133,7 @@ internal enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, ABOUT 
 fun AppRoot(
     requestedGroup: String? = null,
     onUpdateFound: (UpdateInfo) -> Unit = {},
+    onThemeChange: (Int) -> Unit = {},
 ) {
     val context = LocalContext.current
     val api = remember { MietApi(context) }
@@ -389,6 +398,7 @@ fun AppRoot(
             },
             refreshing = refreshing,
             refreshNote = refreshNote,
+            onThemeChange = onThemeChange,
         )
 
         Screen.FAVORITES -> FavoritesScreen(
