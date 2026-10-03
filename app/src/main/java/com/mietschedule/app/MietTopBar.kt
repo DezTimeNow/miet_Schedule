@@ -44,11 +44,11 @@ import androidx.compose.material3.MaterialTheme
 private val BACK_SLOT = 48.dp
 
 /**
- * Сколько dp шапка отдаёт под кнопки справа: звезда + избранное + обновление
- * + «Роль» (+ их резервы на экранах, где их нет). Заголовок ужимается на эту
+ * Сколько dp шапка отдаёт под кнопки справа: звезда + обновление + «Роль»
+ * (+ резервы на экранах, где их нет). Заголовок ужимается на эту
  * величину, иначе он рассчитывается на всю ширину окна и переносится.
  */
-private const val RESERVED_FOR_ACTIONS = 208
+private const val RESERVED_FOR_ACTIONS = 160
 
 /**
  * ЕДИНАЯ ШАПКА для всех экранов приложения.
@@ -114,11 +114,6 @@ fun MietTopBar(
     onBack: (() -> Unit)? = null,
     isFav: Boolean? = null,
     onToggleFav: (() -> Unit)? = null,
-    // Список избранного. Раньше он жил в строке вкладок и появлялся только
-    // при переходе на другую неделю — то есть «зафиксировать избранное в
-    // одном месте» было невозможно. Теперь кнопка живёт в шапке, рядом со
-    // звездой, и доступна всегда. Резерв под неё задан на всех экранах.
-    onOpenFavorites: (() -> Unit)? = null,
 ) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
@@ -141,7 +136,7 @@ fun MietTopBar(
                 val cfg = LocalConfiguration.current
                 val density = LocalDensity.current
                 // Ширина окна в dp: шапка занимает всю ширину минус слоты под
-                // кнопки-действия (звезда/избранное/обновление/роль).
+                // кнопки-действия (звезда/обновление/роль).
                 val availDp = with(density) { cfg.screenWidthDp } - RESERVED_FOR_ACTIONS
                 val titleSp = adaptiveTitleSize(availDp)
                 val subtitleSp = adaptiveSubtitleSize(availDp)
@@ -180,18 +175,9 @@ fun MietTopBar(
                 // есть) обновление стояло бы на 48 px левее, чем на остальных.
                 Spacer(Modifier.width(BACK_SLOT))
             }
-            if (onOpenFavorites != null) {
-                IconButton(onClick = { onOpenFavorites.invoke() }) {
-                    Icon(
-                        Icons.Filled.List,
-                        contentDescription = "Избранное",
-                        tint = LocalAppColors.current.currentGroup,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            } else {
-                Spacer(Modifier.width(BACK_SLOT))
-            }
+            // Место под «Избранное» в шапке больше не нужно: кнопка живёт в
+            // главном меню под выбором роли. Слот убираем целиком, чтобы
+            // заголовок стал шире на всех экранах.
             IconButton(onClick = onRefresh, enabled = !refreshing) {
                 // 343 группы — это ~50 секунд, поэтому вместо иконки крутилка:
                 // молчащее ожидание читается как зависание.

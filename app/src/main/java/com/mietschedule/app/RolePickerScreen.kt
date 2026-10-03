@@ -55,6 +55,10 @@ fun RolePickerScreen(
     onChangeRole: () -> Unit = {},
     onAbout: () -> Unit = {},
     onSettings: () -> Unit = {},
+    // «Избранное» в главном меню. Раньше кнопка жила в шапке, но там ей
+    // не на чем было стоять: рядом со звёздочкой она означала «любить
+    // текущую группу», а не «открыть список». Внизу, рядом с «Настройки»
+    // и «О программе», она читается однозначно.
     onOpenFavorites: (() -> Unit)? = null,
     refreshing: Boolean = false,
     // Прогресс обновления: обновляются все 344 группы, это ~35 секунд.
@@ -73,8 +77,7 @@ fun RolePickerScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 refreshing = refreshing,
-                onBack = null,
-                onOpenFavorites = onOpenFavorites
+                onBack = null
             )
         }
     ) { pad ->
@@ -141,6 +144,17 @@ fun RolePickerScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // «Избранное» перенесено сюда из шапки. В шапке оно было
+                // рядом со звёздочкой и «Обновить», но на других экранах
+                // рядом нечего было ставить, и кнопка либо исчезала, либо
+                // сдвигала соседей. Здесь она всегда под рукой, рядом с
+                // двумя другими кнопками главного меню.
+                TextButton(
+                    onClick = { onOpenFavorites?.invoke() },
+                    enabled = onOpenFavorites != null,
+                ) {
+                    Text("Избранное", color = MIET_BLUE, fontSize = 13.sp)
+                }
                 TextButton(onClick = onSettings) {
                     Text("Настройки", color = MIET_BLUE, fontSize = 13.sp)
                 }

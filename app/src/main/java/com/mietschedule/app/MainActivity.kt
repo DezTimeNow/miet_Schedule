@@ -203,6 +203,48 @@ fun AppRoot(
     var refreshNote by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
+    // ВОССТАНОВЛЕНИЕ КЛЮЧА РОЛИ ПРИ ХОЛОДНОМ СТАРТЕ.
+    //
+    // `selection` возвращается из prefs, а вот ключ, по которому расписание
+    // находит преподавателя или аудиторию, — нет: `teacherCode` и
+    // `roomNameArg` инициализируются пустыми. Для преподавателя это
+    // терпимо (TeacherIndex.lessonsOf умеет искать по имени), но для
+    // аудитории фатально: ScheduleData делает `teacherCode.toIntOrNull()`
+    // и без кода показывает «Не удалось определить аудиторию», хотя имя
+    // аудитории в prefs есть и экран запускается именно с ней.
+    //
+    // Замечено на 0.38 на эмуляторе: после force-stop и запуска аудитория
+    // 1201 (м) открывалась с этой ошибкой, хотя через избранное работала.
+    //
+    // Значения пишутся в LaunchedEffect, а не прямо в теле composable:
+    // rememberSaveable-переменные менять во время композиции нельзя —
+    // это даёт нестабильное состояние и лишний повторный запуск эффекта.
+    val startGroup = selection
+    LaunchedEffect(startGroup, role) {
+        if (startGroup == null) return@LaunchedEffect
+        when (role) {
+            Role.AUDIENCE -> if (teacherCode.isBlank()) {
+                // Код аудитории ищем по имени в кэше списка аудиторий. Сети
+                // здесь нет: список уже на диске, поэтому старт не задерживается.
+                api.audienceCodeByName(startGroup)?.let { code ->
+                    teacherCode = code.toString()
+                    roomNameArg = startGroup
+                }
+            }
+            Role.TEACHER -> if (teacherCode.isBlank()) {
+                // Для преподавателя teacherCode — нормализованное ФИО.
+                teacherCode = TeacherIndex.key(startGroup)
+                roomNameArg = ""
+            }
+            Role.STUDENT -> {
+                // У студента кода аудитории или преподавателя быть не должно:
+                // иначе после смены роли в кэше ищется чужая комната.
+                teacherCode = ""
+                roomNameArg = ""
+            }
+        }
+    }
+
     /**
      * Принудительное обновление данных под текущую роль.
      *
@@ -355,7 +397,6 @@ fun AppRoot(
                     onRefresh = { refreshCurrent() },
                     refreshing = refreshing,
                     refreshNote = refreshNote,
-                    onOpenFavorites = { screen = Screen.FAVORITES },
                 )
                 Role.TEACHER -> TeacherPickerScreen(
                     api, prefs,
@@ -379,7 +420,6 @@ fun AppRoot(
                     onChangeRole = { screen = Screen.PICK_ROLE },
                     refreshing = refreshing,
                     refreshNote = refreshNote,
-                    onOpenFavorites = { screen = Screen.FAVORITES },
                 )
                 Role.AUDIENCE -> AudiencePickerScreen(
                     api, prefs,
@@ -399,7 +439,6 @@ fun AppRoot(
                     refreshing = refreshing,
                     refreshNote = refreshNote,
                     onAbout = { screen = Screen.ABOUT },
-                    onOpenFavorites = { screen = Screen.FAVORITES },
                 )
             }
         }
@@ -408,7 +447,6 @@ fun AppRoot(
             onBack = { screen = Screen.PICK_ROLE },
             onRefresh = { refreshCurrent() },
             onChangeRole = { screen = Screen.PICK_ROLE },
-            onOpenFavorites = { screen = Screen.FAVORITES },
             onThemeChange = onThemeChange,
         )
 
@@ -424,7 +462,6 @@ fun AppRoot(
             },
             refreshing = refreshing,
             refreshNote = refreshNote,
-            onOpenFavorites = { screen = Screen.FAVORITES },
             // Тема переехала в «Настройки», поэтому здесь её переключателя
             // нет и лямбда не передаётся.
         )
@@ -432,16 +469,41 @@ fun AppRoot(
         Screen.FAVORITES -> FavoritesScreen(
             prefs = prefs,
             onOpen = { r, value ->
+                // Открытие из избранного. Здесь восстанавливается всё, что нужно
+                // расписанию, а не только имя: у преподавателя ключ поиска — это
+                // нормализованное ФИО, у аудитории нужен ещё и внутренний код.
+                // Раньше здесь стояли `teacherCode = ""` и переход в PICK_ENTITY,
+                // из-за чего преподаватель показывал «Пар не найдено», аудитория —
+                // «Не удалось определить аудиторию», а студент после выбора
+                // попадал в список групп и должен был жать на группу ещё раз.
+                prefs.saveRole(r)
                 role = r
-                selection = value
-                teacherCode = ""
-                screen = Screen.PICK_ENTITY
+                when (r) {
+                    Role.STUDENT -> {
+                        selection = value
+                        teacherCode = ""
+                        roomNameArg = ""
+                    }
+                    Role.TEACHER -> {
+                        // teacherCode здесь — не числовой код, а нормализованное
+                        // ФИО: именно с ним TeacherIndex.lessonsOf сравнивает
+                        // преподавателя в кэше расписаний.
+                        selection = value
+                        teacherCode = TeacherIndex.key(value)
+                        roomNameArg = ""
+                    }
+                    Role.AUDIENCE -> {
+                        // Имя нужно само по себе для фильтра кэша по комнате,
+                        // код — для запроса к серверу. В избранном хранится имя,
+                        // код ищем в кэше списка аудиторий.
+                        selection = value
+                        roomNameArg = value
+                        teacherCode = api.audienceCodeByName(value)?.toString().orEmpty()
+                    }
+                }
+                prefs.saveFor(r, selection ?: "")
+                screen = Screen.SCHEDULE
             },
-            // Раньше здесь стояло безусловное Screen.SCHEDULE. Но «Избранное»
-            // открывается и с экрана выбора роли, где selection == null, — а
-            // ветка SCHEDULE берёт group = selection!! и падала бы. Теперь
-            // переход тот же, что и в BackHandler: при пустом выборе идём
-            // на выбор роли.
             onBack = { screen = backTargetFor(Screen.FAVORITES, selection != null) },
             onRefresh = { refreshCurrent() },
             onChangeRole = {
@@ -450,7 +512,6 @@ fun AppRoot(
             },
             refreshing = refreshing,
             refreshNote = refreshNote,
-            onOpenFavorites = { screen = Screen.FAVORITES },
         )
 
         // Расписание без выбранной сущности показывать нечем: экран взял бы
@@ -469,7 +530,6 @@ fun AppRoot(
             onRefreshAll = { refreshCurrent() },
             refreshNote = refreshNote,
             onChangeEntity = { screen = Screen.PICK_ENTITY },
-            onOpenFavorites = { screen = Screen.FAVORITES },
             // Из избранного аудитория открывается по имени (value), а код
             // неизвестен — фильтр кэша отработает по имени, это верно.
             onChangeRole = {
@@ -505,7 +565,6 @@ private fun ScheduleBody(
     refreshNote: String,
     onChangeEntity: () -> Unit,
     onChangeRole: () -> Unit,
-    onOpenFavorites: () -> Unit,
 ) {
     val group = selection
     if (group == null) {
@@ -527,7 +586,6 @@ private fun ScheduleBody(
         refreshNote = refreshNote,
         onChangeEntity = onChangeEntity,
         onChangeRole = onChangeRole,
-        onOpenFavorites = onOpenFavorites,
     )
 }
 

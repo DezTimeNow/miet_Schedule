@@ -388,6 +388,25 @@ class MietApi(private val context: Context) {
         return out.values.toList()
     }
 
+    /**
+     * Код аудитории по её названию из кэша списка аудиторий.
+     *
+     * Из избранного приходит только название («8307»), а расписание
+     * аудитории запрашивается по коду из /audiences — внутреннему id, у
+     * «8307» это 234, а не 8307. Без этого поиска открытие аудитории из
+     * избранного заканчивалось ошибкой «Не удалось определить аудиторию».
+     *
+     * Сравнение по roomKey, а не по точному тексту: в списке и в кэше имя
+     * может отличаться пробелами, а roomKey приводит обе формы к одному
+     * виду. null, если аудитории нет в кэше — тогда её надо сначала найти
+     * в списке на экране выбора.
+     */
+    fun audienceCodeByName(name: String): Int? {
+        val want = roomKey(name)
+        if (want.isEmpty()) return null
+        return cachedAudiences().firstOrNull { roomKey(it.name) == want }?.code
+    }
+
     fun loadAudienceIndex(): String? = prefs.getString(KEY_AUD_IDX, null)
     fun loadAudienceIndexTs(): Long = prefs.getLong(KEY_AUD_IDX_TS, 0L)
 

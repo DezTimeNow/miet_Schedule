@@ -71,7 +71,6 @@ fun TeacherPickerScreen(
     // Прогресс обновления под шапкой: обновляются все 344 группы, это
     // ~35 секунд, и без текста ожидание выглядит как зависшее приложение.
     refreshNote: String = "",
-    onOpenFavorites: (() -> Unit)? = null,
 ) {
     var teachers by remember { mutableStateOf<List<TeacherIndex.Teacher>>(emptyList()) }
     var building by remember { mutableStateOf(false) }
@@ -148,8 +147,7 @@ fun TeacherPickerScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 refreshing = refreshing,
-                onBack = onBack,
-                onOpenFavorites = onOpenFavorites
+                onBack = onBack
             )
         }
     ) { pad ->
@@ -296,7 +294,6 @@ fun AudiencePickerScreen(
     // Прогресс обновления под шапкой: обновляются все 344 группы, это
     // ~35 секунд, и без текста ожидание выглядит как зависшее приложение.
     refreshNote: String = "",
-    onOpenFavorites: (() -> Unit)? = null,
 ) {
     var list by remember { mutableStateOf<List<Audience>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -402,8 +399,7 @@ fun AudiencePickerScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 refreshing = refreshing,
-                onBack = onBack,
-                onOpenFavorites = onOpenFavorites
+                onBack = onBack
             )
         }
     ) { pad ->
