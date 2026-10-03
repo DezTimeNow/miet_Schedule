@@ -453,4 +453,30 @@ class ChipTopTest {
             game.contains("if (phase != Phase.Playing) return@collect"),
         )
     }
+
+    /**
+     * Приложение работает и со старой версией скрипта.
+     *
+     * Новый скрипт отдаёт топ в ответе на запись. Пока он не развёрнут,
+     * ответ приходит без поля top, и тогда таблица игроков замирала бы на
+     * том снимке, что был при открытии экрана. Приложение обязано работать
+     * с обеими версиями, иначе релиз нельзя публиковать до загрузки скрипта.
+     */
+    @Test
+    fun `старый скрипт без топа в ответе не ломает таблицу`() {
+        val game = srcFile("TapChipScreen.kt")
+        assertTrue(
+            "При пустом top из ответа должно идти отдельное чтение топа",
+            game.contains("val fresh = r.top ?: ChipTop.loadTop()"),
+        )
+
+        // Разбор ответа старого скрипта: rank есть, top отсутствует.
+        val old = ChipTop.parseSubmit("""{"ok":true,"rank":4,"total":4}""")
+        assertTrue("Старая версия должна разбираться", old is ChipTop.SubmitResult.Saved)
+        assertEquals(4, (old as ChipTop.SubmitResult.Saved).rank)
+        org.junit.Assert.assertNull(
+            "В ответе без top поле должно быть пустым, а не выдуманным",
+            old.top,
+        )
+    }
 }
