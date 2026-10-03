@@ -55,6 +55,7 @@ fun RolePickerScreen(
     onChangeRole: () -> Unit = {},
     onAbout: () -> Unit = {},
     onSettings: () -> Unit = {},
+    onOpenFavorites: (() -> Unit)? = null,
     refreshing: Boolean = false,
     // Прогресс обновления: обновляются все 344 группы, это ~35 секунд.
     // Без текста ожидание выглядит как зависшее приложение.
@@ -72,7 +73,8 @@ fun RolePickerScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 refreshing = refreshing,
-                onBack = null
+                onBack = null,
+                onOpenFavorites = onOpenFavorites
             )
         }
     ) { pad ->

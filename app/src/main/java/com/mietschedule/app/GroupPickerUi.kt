@@ -61,7 +61,8 @@ fun GroupPickerScreen(
     onSwitchRole: () -> Unit = {},
     onRefresh: () -> Unit = {},
     refreshing: Boolean = false,
-    refreshNote: String = ""
+    refreshNote: String = "",
+    onOpenFavorites: (() -> Unit)? = null,
 ) {
     var groups by remember { mutableStateOf<List<String>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -118,7 +119,8 @@ fun GroupPickerScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onSwitchRole,
                 refreshing = refreshing,
-                onBack = onSwitchRole
+                onBack = onSwitchRole,
+                onOpenFavorites = onOpenFavorites
             )
         }
     ) { pad ->

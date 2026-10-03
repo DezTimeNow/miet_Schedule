@@ -326,6 +326,7 @@ fun AppRoot(
             refreshNote = refreshNote,
             onAbout = { screen = Screen.ABOUT },
             onSettings = { screen = Screen.SETTINGS },
+            onOpenFavorites = { screen = Screen.FAVORITES },
             refreshing = refreshing,
             onPick = { r ->
                 prefs.saveRole(r)
@@ -354,6 +355,7 @@ fun AppRoot(
                     onRefresh = { refreshCurrent() },
                     refreshing = refreshing,
                     refreshNote = refreshNote,
+                    onOpenFavorites = { screen = Screen.FAVORITES },
                 )
                 Role.TEACHER -> TeacherPickerScreen(
                     api, prefs,
@@ -376,7 +378,8 @@ fun AppRoot(
                     onRefresh = { refreshCurrent() },
                     onChangeRole = { screen = Screen.PICK_ROLE },
                     refreshing = refreshing,
-                    refreshNote = refreshNote
+                    refreshNote = refreshNote,
+                    onOpenFavorites = { screen = Screen.FAVORITES },
                 )
                 Role.AUDIENCE -> AudiencePickerScreen(
                     api, prefs,
@@ -396,12 +399,16 @@ fun AppRoot(
                     refreshing = refreshing,
                     refreshNote = refreshNote,
                     onAbout = { screen = Screen.ABOUT },
+                    onOpenFavorites = { screen = Screen.FAVORITES },
                 )
             }
         }
 
         Screen.SETTINGS -> SettingsScreen(
             onBack = { screen = Screen.PICK_ROLE },
+            onRefresh = { refreshCurrent() },
+            onChangeRole = { screen = Screen.PICK_ROLE },
+            onOpenFavorites = { screen = Screen.FAVORITES },
             onThemeChange = onThemeChange,
         )
 
@@ -417,6 +424,7 @@ fun AppRoot(
             },
             refreshing = refreshing,
             refreshNote = refreshNote,
+            onOpenFavorites = { screen = Screen.FAVORITES },
             // Тема переехала в «Настройки», поэтому здесь её переключателя
             // нет и лямбда не передаётся.
         )
@@ -442,6 +450,7 @@ fun AppRoot(
             },
             refreshing = refreshing,
             refreshNote = refreshNote,
+            onOpenFavorites = { screen = Screen.FAVORITES },
         )
 
         // Расписание без выбранной сущности показывать нечем: экран взял бы

@@ -52,27 +52,27 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onRefresh: () -> Unit = {},
+    onChangeRole: () -> Unit = {},
+    onOpenFavorites: (() -> Unit)? = null,
     onThemeChange: (Int) -> Unit = {},
 ) {
     val ctx = LocalContext.current
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Настройки", fontSize = 17.sp) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Назад")
-                    }
-                },
-                // Цвета текста задаются в colors: параметров titleContentColor
-                // и navigationIconContentColor у TopAppBar нет — компилятор
-                // прав, а проверка ниже это фиксирует.
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MIET_BLUE,
-                    titleContentColor = MaterialTheme.colorScheme.surface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.surface,
-                ),
+            // Общая шапка приложения, а не своя TopAppBar. Своя шапка была
+            // написана до того, как «Настройки» стали отдельным экраном, и
+            // поэтому не имела кнопки «Избранное», звезды, обновления и
+            // «Роль». Ровно та же причина, по которой кнопка прыгала по
+            // меню: набор соседей задавался здесь вручную и не совпадал.
+            MietTopBar(
+                title = "Настройки",
+                subtitle = "Напоминания и оформление",
+                onRefresh = onRefresh,
+                onChangeRole = onChangeRole,
+                onBack = onBack,
+                onOpenFavorites = onOpenFavorites,
             )
         }
     ) { pad ->
