@@ -60,6 +60,38 @@ internal val DAY_SHORT = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", 
  * единицу. 2 октября 2026 — пятница, cw=6, и приложение называло «Сб» вместо
  * «Пт», а карточки пар соседнего дня подсвечивались как сегодняшние.
  */
+/**
+ * Экран, который открывается при запуске.
+ *
+ * Вынесено отдельной функцией, а не оставлено внутри remember: правило
+ * «сохранённая группа → сразу расписание» однажды стояло наоборот
+ * (PICK_ENTITY), из-за чего приложение при каждом старте показывало
+ * список групп вместо расписания. Правило проверяется тестом напрямую,
+ * без запуска Activity.
+ */
+internal fun startScreenFor(hasSavedSelection: Boolean, requestedGroup: Boolean): Screen =
+    if (hasSavedSelection || requestedGroup) Screen.SCHEDULE else Screen.PICK_ROLE
+
+/**
+ * Куда ведёт системная кнопка «Назад» и стрелка «‹».
+ *
+ * Один источник правды для всех пяти экранов. Раньше одна и та же логика
+ * была продублирована в BackHandler, в переходах из «Избранного» и из
+ * «О программе», и в двух местах ветвились по-разному: пустой выбор
+ * приводил к падению на `selection!!` в ветке SCHEDULE.
+ *
+ * @param hasSelection выбрана ли группа/аудитория/преподаватель. На экране
+ *   выбора роли она пустая, и оттуда «Назад» означает выход из приложения.
+ */
+internal fun backTargetFor(screen: Screen, hasSelection: Boolean): Screen = when (screen) {
+    Screen.PICK_ENTITY -> Screen.PICK_ROLE
+    Screen.SCHEDULE -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
+    Screen.FAVORITES -> if (hasSelection) Screen.SCHEDULE else Screen.PICK_ROLE
+    Screen.ABOUT -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
+    // С этого экрана BackHandler выключен, но стрелка может звать функцию.
+    Screen.PICK_ROLE -> Screen.PICK_ROLE
+}
+
 internal fun dayIndexFromCalendar(dayOfWeek: Int): Int = (dayOfWeek + 5) % 7
 
 class MainActivity : ComponentActivity() {
@@ -93,17 +125,17 @@ class MainActivity : ComponentActivity() {
  * Куда пользователь по выбору роли: сначала роль, потом своя сущность
  * (группа / преподаватель / аудитория), и только потом расписание.
  */
-private val RoleSaver = Saver<Role, String>(
+internal val RoleSaver = Saver<Role, String>(
     save = { it.key },
     restore = { key -> Role.fromKey(key) },
 )
 
-private val ScreenSaver = Saver<Screen, String>(
+internal val ScreenSaver = Saver<Screen, String>(
     save = { it.name },
     restore = { key -> Screen.entries.firstOrNull { it.name == key } ?: Screen.PICK_ROLE },
 )
 
-private enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, ABOUT }
+internal enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, ABOUT }
 
 @Composable
 fun AppRoot(
@@ -122,8 +154,13 @@ fun AppRoot(
     var role by rememberSaveable(stateSaver = RoleSaver) { mutableStateOf(prefs.role()) }
     // Выбор в рамках роли. Для преподавателя храним ФИО, для аудитории — имя
     // (по имени проще искать в избранном), код аудитории добираем из списка.
-    var teacherCode by remember { mutableStateOf("") }
-    var roomNameArg by remember { mutableStateOf("") }
+    // Код преподавателя и имя аудитории тоже переживают поворот. Раньше это
+    // был обычный remember: роль и группа восстанавливались, а эти два поля
+    // обнулялись, и у преподавателя после поворота переставал грузиться
+    // индекс (refreshTeacher/lessonsOf получали пустой код), у аудитории
+    // терялось имя для фильтра кэша.
+    var teacherCode by rememberSaveable { mutableStateOf("") }
+    var roomNameArg by rememberSaveable { mutableStateOf("") }
     var selection by rememberSaveable { mutableStateOf(requestedGroup ?: prefs.load()) }
 
     // СТАРТОВЫЙ ЭКРАН. При сохранённой роли и группе открываем сразу
@@ -133,9 +170,7 @@ fun AppRoot(
     // даже при готовом кэше (sched_ИВТ-11 в miet_cache.xml). Без сохранённого
     // выбора — как и раньше, с экрана выбора роли.
     var screen by rememberSaveable(stateSaver = ScreenSaver) {
-        mutableStateOf(
-            if (prefs.load() != null || requestedGroup != null) Screen.SCHEDULE else Screen.PICK_ROLE
-        )
+        mutableStateOf(startScreenFor(prefs.load() != null, requestedGroup != null))
     }
     // СИСТЕМНАЯ КНОПКА «НАЗАД». Проверено на эмуляторе: без этого перехвата
     // Android завершал Activity на всех пяти экранах (focus уходил на launcher),
@@ -144,13 +179,7 @@ fun AppRoot(
     // вернуться было нечем. Здесь те же переходы, что и у стрелки «‹».
     // На экране роли перехват выключен: там назад — выход из приложения.
     BackHandler(enabled = screen != Screen.PICK_ROLE) {
-        screen = when (screen) {
-            Screen.PICK_ENTITY -> Screen.PICK_ROLE
-            Screen.SCHEDULE -> Screen.PICK_ENTITY
-            Screen.FAVORITES -> if (selection != null) Screen.SCHEDULE else Screen.PICK_ROLE
-            Screen.ABOUT -> if (selection != null) Screen.PICK_ENTITY else Screen.PICK_ROLE
-            Screen.PICK_ROLE -> Screen.PICK_ROLE
-        }
+        screen = backTargetFor(screen, selection != null)
     }
     // Кнопка «Обновить» есть на всех экранах, поэтому состояние живёт здесь и
     // передаётся вниз — иначе каждый экран вёл бы свой счётчик.
@@ -361,7 +390,7 @@ fun AppRoot(
         Screen.ABOUT -> AboutScreen(
             versionName = BuildConfig.VERSION_NAME,
             versionCode = BuildConfig.VERSION_CODE,
-            onBack = { screen = if (selection != null) Screen.PICK_ENTITY else Screen.PICK_ROLE },
+            onBack = { screen = backTargetFor(Screen.ABOUT, selection != null) },
             onUpdateFound = onUpdateFound,
             onRefresh = { refreshCurrent() },
             onChangeRole = {
@@ -385,7 +414,7 @@ fun AppRoot(
             // ветка SCHEDULE берёт group = selection!! и падала бы. Теперь
             // переход тот же, что и в BackHandler: при пустом выборе идём
             // на выбор роли.
-            onBack = { screen = if (selection != null) Screen.SCHEDULE else Screen.PICK_ROLE },
+            onBack = { screen = backTargetFor(Screen.FAVORITES, selection != null) },
             onRefresh = { refreshCurrent() },
             onChangeRole = {
                 prefs.clear(); selection = null; teacherCode = ""; roomNameArg = ""
