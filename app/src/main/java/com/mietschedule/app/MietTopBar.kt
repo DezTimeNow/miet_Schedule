@@ -190,8 +190,12 @@ fun MietTopBar(
                     modifier = Modifier.size(22.dp)
                 )
             }
+            // Кнопка называется «Меню» и всегда возвращает на главную
+            // страницу выбора роли. Раньше она называлась «Роль», хотя
+            // вела не на выбор роли, а на домашний экран, и на экране
+            // расписания с уже выбранной группой это вводило в заблуждение.
             TextButton(onClick = onChangeRole) {
-                Text("Роль", color = LocalAppColors.current.currentGroup, fontSize = 13.sp)
+                Text("Меню", color = LocalAppColors.current.currentGroup, fontSize = 13.sp)
             }
         }
     )

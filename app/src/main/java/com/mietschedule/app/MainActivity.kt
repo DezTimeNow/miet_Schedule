@@ -77,6 +77,8 @@ internal fun backTargetFor(screen: Screen, hasSelection: Boolean): Screen = when
     // Отчёт открывается только из «О программе», поэтому назад — туда же
     // безусловно: выбранное расписание на это не влияет.
     Screen.REPORT -> Screen.ABOUT
+    // Игра открывается из главного меню, поэтому назад — туда же.
+    Screen.CHIP_GAME -> Screen.PICK_ROLE
     // С этого экрана BackHandler выключен, но стрелка может звать функцию.
     Screen.PICK_ROLE -> Screen.PICK_ROLE
 }
@@ -147,7 +149,9 @@ internal val ScreenSaver = Saver<Screen, String>(
 // и возвращается туда же. В ScreenSaver он попадает сам — Saver работает по
 // it.name, а не по списку констант, поэтому новый экран в списке restore
 // не нужен.
-internal enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT, REPORT }
+internal enum class Screen {
+    PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT, REPORT, CHIP_GAME,
+}
 
 @Composable
 fun AppRoot(
@@ -386,6 +390,7 @@ fun AppRoot(
             onAbout = { screen = Screen.ABOUT },
             onSettings = { screen = Screen.SETTINGS },
             onOpenFavorites = { screen = Screen.FAVORITES },
+            onOpenChipGame = { screen = Screen.CHIP_GAME },
             refreshing = refreshing,
             onPick = { r ->
                 prefs.saveRole(r)
@@ -473,10 +478,7 @@ fun AppRoot(
             onBack = { screen = backTargetFor(Screen.ABOUT, selection != null) },
             onUpdateFound = onUpdateFound,
             onRefresh = { refreshCurrent() },
-            onChangeRole = {
-                prefs.clear(); selection = null; teacherCode = ""; roomNameArg = ""
-                screen = Screen.PICK_ROLE
-            },
+            onChangeRole = { screen = Screen.PICK_ROLE },
             onReport = { screen = Screen.REPORT },
             refreshing = refreshing,
             refreshNote = refreshNote,
@@ -502,6 +504,12 @@ fun AppRoot(
             ),
             onBack = { screen = Screen.ABOUT },
         )
+
+        // ───────── мини-игра «Тапни микросхему» ─────────
+        //
+        // Отдельный экран без параметров: он не зависит от выбранной роли
+        // или группы, а результат уходит на скрипт таблицы лидеров.
+        Screen.CHIP_GAME -> TapChipScreen(onBack = { screen = Screen.PICK_ROLE })
 
 Screen.FAVORITES -> FavoritesScreen(
             prefs = prefs,
@@ -543,10 +551,7 @@ Screen.FAVORITES -> FavoritesScreen(
             },
             onBack = { screen = backTargetFor(Screen.FAVORITES, selection != null) },
             onRefresh = { refreshCurrent() },
-            onChangeRole = {
-                prefs.clear(); selection = null; teacherCode = ""; roomNameArg = ""
-                screen = Screen.PICK_ROLE
-            },
+            onChangeRole = { screen = Screen.PICK_ROLE },
             refreshing = refreshing,
             refreshNote = refreshNote,
         )
@@ -569,13 +574,7 @@ Screen.FAVORITES -> FavoritesScreen(
             onChangeEntity = { screen = Screen.PICK_ENTITY },
             // Из избранного аудитория открывается по имени (value), а код
             // неизвестен — фильтр кэша отработает по имени, это верно.
-            onChangeRole = {
-                prefs.clear()
-                selection = null
-                teacherCode = ""
-                roomNameArg = ""
-                screen = Screen.PICK_ROLE
-            },
+            onChangeRole = { screen = Screen.PICK_ROLE },
             onScreenState = { n, err -> reportLessons = n; reportError = err },
         )
     }

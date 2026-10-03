@@ -50,6 +50,18 @@ object ScheduleColorScheme {
     val error = Color(0xFFC62828)
     val errorContainer = Color(0xFFFFEBEE)
 
+    /**
+     * Корпус микросхемы в мини-игре.
+     *
+     * Тёмно-зелёный, как у настоящей микросхемы. Отдельный цвет нужен
+     * потому, что на белой и на чёрной теме один и тот же оттенок читается
+     * по-разному: светлый корпус на тёмном фоне выглядит пятном.
+     */
+    val chipBody = Color(0xFF2E7D32)
+    // Нижняя часть корпуса: без неё микросхема выглядит плоской наклейкой.
+    val chipBodyDeep = Color(0xFF10491A)
+    val chipPin = Color(0xFFC7CED6)
+
     /** Плашка «ЛАБОРАТОРНАЯ» на карточке пары. */
     val labBadge = Color(0xFFFFF3E0)
     val onLabBadge = Color(0xFFE65100)
@@ -87,6 +99,12 @@ object ScheduleColorScheme {
     val darkOnFav = Color(0xFFFFE0A3)
 
     val darkCurrentGroup = Color(0xFF1B3A57)
+
+    /** Корпус микросхемы в тёмной теме — тот же зелёный, чуть светлее:
+     *  на чёрном фоне #1B5E20 почти не читается. */
+    val darkChipBody = Color(0xFF43A047)
+    val darkChipBodyDeep = Color(0xFF1B5E20)
+    val darkChipPin = Color(0xFF8A949E)
     val darkRowGroup = Color(0xFF152230)
 
     val darkFavStar = Color(0xFFFFB77C)

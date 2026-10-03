@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -39,13 +40,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.unit.sp
+
+/**
+ * Название и слоган мини-игры.
+ *
+ * Вынесены в константы, потому что используются в трёх местах: на карточке
+ * в главном меню, в заголовке экрана игры и в описании релиза. При
+ * отдельном написании они со временем разъезжаются.
+ */
+internal const val GAME_TITLE = "Тапай микросхему"
+internal const val GAME_TAGLINE = "будь лучшим!!"
 
 /**
  * Первый экран: кто я. Дальше путь зависит от роли — студент выбирает группу,
  * преподаватель ищет себя по фамилии, аудитория выбирается по корпусу.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+// FlowRow помечен как экспериментальный в foundation-layout, TopAppBar —
+// в material3. Без этих двух opt-in файл не компилируется.
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun RolePickerScreen(
     current: Role?,
@@ -60,6 +74,11 @@ fun RolePickerScreen(
     // текущую группу», а не «открыть список». Внизу, рядом с «Настройки»
     // и «О программе», она читается однозначно.
     onOpenFavorites: (() -> Unit)? = null,
+    // Мини-игра. Кнопка активна всегда: без сети открывается экран с
+    // требованием подключиться — так человек сразу видит, что игра есть
+    // и почему она недоступна. Требование владельца: без сети игра не
+    // работает вовсе, поэтому и локального счёта нет.
+    onOpenChipGame: (() -> Unit)? = null,
     refreshing: Boolean = false,
     // Прогресс обновления: обновляются все 344 группы, это ~35 секунд.
     // Без текста ожидание выглядит как зависшее приложение.
@@ -134,15 +153,32 @@ fun RolePickerScreen(
             Spacer(Modifier.height(24.dp))
             // «О программе» убрана из шапки ради единого места у кнопки
             // обновления, но доступ не потерян: кнопка стоит под списком ролей.
+            Spacer(Modifier.height(18.dp))
+
+            // ───────── мини-игра МИЭТ ─────────
+            // Отдельная карточка, а не кнопка в ряду: подпись «Тапать
+            // микросхему» длиннее соседних и в общем ряду либо обрезалась,
+            // либо переносила за собой всю строку. Игра — не служебная
+            // кнопка вроде «Настроек», а то, ради чего её запускают, и
+            // она стоит выше служебных.
+            GameCard(
+                onClick = { onOpenChipGame?.invoke() },
+                enabled = onOpenChipGame != null,
+            )
+
             Spacer(Modifier.height(14.dp))
             // Настройки и «О программе» — две отдельные кнопки в одном месте.
             // Раньше тему и напоминания приходилось искать внутри «О программе»,
             // а это последний экран перед выходом: настройку ищут перед
             // использованием, а не после.
-            Row(
+            // Четыре кнопки в ряд не помещались на узких экранах: на
+            // Honor Magic V2 шириной 1200 px при density 3 подписи
+            // обрезались. FlowRow переносит их на вторую строку целиком,
+            // а не рвёт строку между словами.
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.Center,
             ) {
                 // «Избранное» перенесено сюда из шапки. В шапке оно было
                 // рядом со звёздочкой и «Обновить», но на других экранах
@@ -196,6 +232,56 @@ private fun RoleCard(role: Role, selected: Boolean, onClick: () -> Unit) {
             }
             Text(
                 if (selected) "\u2713" else "\u203a",
+                fontSize = 22.sp,
+                color = MIET_BLUE,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+/**
+ * Карточка мини-игры в главном меню.
+ *
+ * Стоит после списка ролей: выбор роли — это вход в приложение, а игра
+ * ни с чем не связана и от роли не зависит.
+ */
+@Composable
+private fun GameCard(onClick: () -> Unit, enabled: Boolean) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Filled.Memory,
+                contentDescription = null,
+                tint = MIET_BLUE,
+                modifier = Modifier.size(30.dp)
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    GAME_TITLE,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    GAME_TAGLINE,
+                    fontSize = 12.sp,
+                    color = LocalAppColors.current.muted
+                )
+            }
+            Text(
+                "\u203a",
                 fontSize = 22.sp,
                 color = MIET_BLUE,
                 fontWeight = FontWeight.Bold
