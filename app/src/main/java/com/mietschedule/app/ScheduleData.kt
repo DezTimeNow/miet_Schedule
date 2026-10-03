@@ -1,5 +1,6 @@
 package com.mietschedule.app
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.*
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ import androidx.compose.runtime.remember
  */
 @Composable
 internal fun rememberScheduleData(
+    ctx: Context,
     api: MietApi,
     role: Role,
     group: String,
@@ -51,11 +53,22 @@ internal fun rememberScheduleData(
         scope.launch {
             refreshing = true
             error = null
+
             when (role) {
                 Role.STUDENT -> {
                     val cached = withContext(Dispatchers.IO) { api.cachedSchedule(group) }
                     if (cached != null) runCatching { apply(cached) }
-                    if (force || lessons.isEmpty()) {
+                    // Идём на сервер, если принудительно, если кэша нет или
+                    // если он ПРОТУХ (6 часов). Раньше здесь стояло только
+                    // `lessons.isEmpty()`, и при непустом кэше приложение
+                    // месяцами показывало данные, изменившиеся на сайте.
+                    val needNet = force || api.scheduleExpired(group)
+                    if (needNet) {
+                        // Отметка «проверено» ставится ИМЕННО здесь, перед
+                        // запросом. Раньше она стояла в начале load(), и тогда
+                        // подпись «проверено» означала даже показ свежего
+                        // кэша без единого обращения к сети.
+                        withContext(Dispatchers.IO) { api.markCheck(role, group) }
                         // fetchSchedule больше НЕ пишет кэш сам — иначе 343
                         // commit() посреди обновления съедали всё время. Здесь
                         // одиночный запрос, пишем кэш явно и ровно один раз.
@@ -224,6 +237,10 @@ internal fun rememberScheduleData(
             // что показывать. Раньше пересчёт стоял в onClick до ответа сервера —
             // это была гонка, и дата на экране оставалась старой.
             onLoaded(withContext(Dispatchers.IO) { api.lastUpdatedAt(role, group) })
+            // Напоминания строим из того, что реально лежит в кэше: будильник
+            // должен работать без сети, а данные могли обновиться в фоне.
+            runCatching { ReminderScheduler.reschedule(ctx, api) }
+                .onFailure { Log.w("Schedule", "Напоминания не пересчитаны", it) }
             loading = false
             refreshing = false
         }

@@ -57,7 +57,7 @@ class MietApi(private val context: Context) {
     fun fetchGroups(force: Boolean = false): List<String> {
         val cached = prefs.getString("groups", null)
         val fresh = prefs.getLong("groups_ts", 0L)
-        val ttl = 7L * 24 * 60 * 60 * 1000
+        val ttl = CachePolicy.GROUPS_TTL_MS
         if (!force && cached != null && System.currentTimeMillis() - fresh < ttl) {
             return cached.split("|||").filter { it.isNotBlank() }
         }
@@ -108,6 +108,27 @@ class MietApi(private val context: Context) {
             .putLong("${key}_ts", System.currentTimeMillis())
             .commit()
     }
+
+    // ── Срок жизни кэша расписания ─────────────────────────────────────
+    //
+    // Раньше срока не было вовсе: кэш группы писался один раз и жил вечно,
+    // а условие загрузки `force || lessons.isEmpty()` при непустом кэше сеть
+    // не дёргал. Пользователь, открывающий приложение каждый день, месяцами
+    // видел расписание, изменившееся на сайте. Теперь кэш протухает, и
+    // следующий запуск сам идёт за свежими данными.
+
+    /** Кэш группы протух? Пустой кэш считаем протухшим всегда. */
+    fun scheduleExpired(group: String, now: Long = System.currentTimeMillis()): Boolean {
+        val raw = prefs.getString("sched_$group", null) ?: return true
+        if (raw.isEmpty()) return true
+        val ts = prefs.getLong("sched_${group}_ts", 0L)
+        if (ts <= 0L) return true
+        return now - ts >= CachePolicy.SCHEDULE_TTL_MS
+    }
+
+    /** Кэш есть и ещё свежий — можно показывать без обращения к сети. */
+    fun scheduleFresh(group: String, now: Long = System.currentTimeMillis()): Boolean =
+        !scheduleExpired(group, now)
 
     /**
      * Пакетная запись расписаний ОДНИМ редактором.
@@ -200,6 +221,32 @@ class MietApi(private val context: Context) {
         return best
     }
 
+    // ── Попытки проверки сервера ───────────────────────────────────────
+    //
+    // lastUpdatedAt отвечает на вопрос «когда данные легли в кэш».
+    // Эти два метода — на другой: «когда мы ПОПЫТАЛИСЬ уточнить их у
+    // сайта». Разница видна без сети: попытка была, а данные старые.
+    // Подпись в шапке обязана это различать, иначе недельный кэш
+    // читается как «обновлено сегодня».
+
+    private fun checkKey(role: Role, entity: String): String = when (role) {
+        Role.STUDENT -> "last_check_student_${entity}"
+        Role.TEACHER -> "last_check_teacher_${entity}"
+        Role.AUDIENCE -> "last_check_aud_${entity}"
+    }
+
+    /** Когда последний раз ходили к серверу за этой сущностью. */
+    fun lastCheckAt(role: Role, entity: String): Long =
+        prefs.getLong(checkKey(role, entity), 0L)
+
+    /**
+     * Пометить попытку проверки. Ставится ДО сетевого запроса: метка
+     * означает «проверяли», а не «получили свежее».
+     */
+    fun markCheck(role: Role, entity: String, now: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong(checkKey(role, entity), now).apply()
+    }
+
     fun lastUpdatedAt(role: Role, entity: String): Long {
         val candidates = when (role) {
             Role.STUDENT -> listOf(prefs.getLong("sched_${entity}_ts", 0L))
@@ -251,7 +298,7 @@ class MietApi(private val context: Context) {
     fun fetchAudiences(): List<Audience> {
         val cached = prefs.getString(KEY_AUD, null)
         val fresh = prefs.getLong("${KEY_AUD}_ts", 0L)
-        val ttl = 7L * 24 * 60 * 60 * 1000
+        val ttl = CachePolicy.GROUPS_TTL_MS
         if (cached != null && System.currentTimeMillis() - fresh < ttl) {
             // Кэш читаем через runCatching: оборванная запись в prefs (например,
             // после падения при записи) дала бы JsonSyntaxException прямо в

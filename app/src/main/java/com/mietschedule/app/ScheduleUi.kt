@@ -82,7 +82,14 @@ fun ScheduleScreen(
     // экран читает значение здесь, а load() сообщает новую дату через
     // onLoaded — раньше метка отставала от фактической записи в кэш.
     var lastUpdated by remember { mutableStateOf(0L) }
-    val data = rememberScheduleData(api, role, group, teacherCode, roomName) { ts ->
+    // Время последней ПОПЫТКИ обращения к серверу. Раньше его не показывали
+    // вовсе, а подпись «обновлено» означала время записи кэша: при неудачной
+    // сети читалось «обновлено сегодня», хотя ничего не обновилось.
+    var lastChecked by remember { mutableStateOf(0L) }
+    // Контекст нужен для планировщика напоминаний: он ставит системные
+    // будильники и забирает кэш расписания.
+    val ctx = LocalContext.current
+    val data = rememberScheduleData(ctx, api, role, group, teacherCode, roomName) { ts ->
         lastUpdated = ts
     }
     val lessons = data.lessons
@@ -169,7 +176,10 @@ fun ScheduleScreen(
 
     // Дата последнего обновления. Перечитываем и при смене роли/объекта, и
     // после каждой загрузки — иначе после «Обновить» осталась бы старая дата.
-    LaunchedEffect(group, role) { refreshLastUpdated() }
+    LaunchedEffect(group, role) {
+        refreshLastUpdated()
+        lastChecked = withContext(Dispatchers.IO) { api.lastCheckAt(role, group) }
+    }
 
 
 
@@ -270,7 +280,14 @@ fun ScheduleScreen(
                 // ПРАВЕЕ «Сегодня»/«Вся неделя» и при смене ширины подписей
                 // съезжала. В шапке у неё фиксированный слот.
                 isFav = isFav,
-                onToggleFav = { prefs.toggleFavFor(role, group); refreshFav() },
+                onToggleFav = {
+                prefs.toggleFavFor(role, group)
+                refreshFav()
+                // Напоминания строятся по избранным группам, поэтому смена
+                // отметки обязана сразу пересчитать будильники, иначе новая
+                // группа молчала бы до следующей фоновой задачи (до 6 часов).
+                runCatching { ReminderScheduler.reschedule(ctx, api) }
+            },
                 onOpenFavorites = onOpenFavorites
             )
         }
@@ -287,7 +304,7 @@ fun ScheduleScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Обновлено: ${LastUpdated.label(lastUpdated)}",
+                    LastUpdated.fullLine(lastChecked, lastUpdated),
                     fontSize = 11.sp,
                     color = LocalAppColors.current.muted,
                     modifier = Modifier.weight(1f),
