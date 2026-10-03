@@ -73,6 +73,9 @@ fun ScheduleScreen(
     refreshNote: String = "",
     onChangeEntity: () -> Unit,
     onChangeRole: () -> Unit,
+    // Сообщает наружу, что сейчас на экране: сколько пар и есть ли ошибка.
+    // Читает это экран отчёта об ошибке, открываемый из «О программе».
+    onScreenState: (Int, String?) -> Unit = { _, _ -> },
 ) {
     // Данные и загрузка вынесены в rememberScheduleData (ScheduleData.kt):
     // здесь остаётся только отрисовка. Раньше те же 190 строк загрузки
@@ -98,6 +101,10 @@ fun ScheduleScreen(
     val refreshing = data.refreshing
     val error = data.error
     val load = data.load
+    // Состояние экрана наружу. Пишем и на пустом списке, и при ошибке:
+    // «пар нет» и «показана ошибка» — разные ситуации, и в отчёте они
+    // должны различаться.
+    LaunchedEffect(lessons.size, error) { onScreenState(lessons.size, error) }
     // ─── СВЯЗКА «СЕГОДНЯ» И НЕДЕЛИ ───
     //
     // Фильтр «Сегодня» имеет смысл только на текущей неделе. Кнопки ‹ ›

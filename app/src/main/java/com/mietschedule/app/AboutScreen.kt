@@ -36,6 +36,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Send
 
 import androidx.compose.runtime.mutableStateOf
 
@@ -68,6 +69,7 @@ fun AboutScreen(
     onUpdateFound: (UpdateInfo) -> Unit = {},
     onRefresh: () -> Unit = {},
     onChangeRole: () -> Unit = {},
+    onReport: () -> Unit = {},
     refreshing: Boolean = false,
     refreshNote: String = "",
 ) {
@@ -189,6 +191,31 @@ fun AboutScreen(
             }
 
             Spacer(Modifier.height(8.dp))
+
+            // ───────── кнопка «Сообщить об ошибке» ─────────
+            // Стоит сразу под проверкой обновлений: обе кнопки про то, как
+            // приложение себя ведёт. Дальше идёт описание работы — его
+            // читают, когда хотят понять приложение, а не починить его.
+            Button(
+                onClick = onReport,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MIET_BLUE),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Send,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Сообщить об ошибке",
+                    color = MaterialTheme.colorScheme.surface,
+                    fontSize = 14.sp,
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
 
             Text(
                 lastCheckLabel(lastChecked),

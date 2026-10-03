@@ -74,6 +74,9 @@ internal fun backTargetFor(screen: Screen, hasSelection: Boolean): Screen = when
     Screen.FAVORITES -> if (hasSelection) Screen.SCHEDULE else Screen.PICK_ROLE
     Screen.SETTINGS -> Screen.PICK_ROLE
     Screen.ABOUT -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
+    // Отчёт открывается только из «О программе», поэтому назад — туда же
+    // безусловно: выбранное расписание на это не влияет.
+    Screen.REPORT -> Screen.ABOUT
     // С этого экрана BackHandler выключен, но стрелка может звать функцию.
     Screen.PICK_ROLE -> Screen.PICK_ROLE
 }
@@ -140,7 +143,11 @@ internal val ScreenSaver = Saver<Screen, String>(
     restore = { key -> Screen.entries.firstOrNull { it.name == key } ?: Screen.PICK_ROLE },
 )
 
-internal enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT }
+// REPORT добавлен рядом с ABOUT: экран отчёта открывается из «О программе»
+// и возвращается туда же. В ScreenSaver он попадает сам — Saver работает по
+// it.name, а не по списку констант, поэтому новый экран в списке restore
+// не нужен.
+internal enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT, REPORT }
 
 @Composable
 fun AppRoot(
@@ -198,6 +205,16 @@ fun AppRoot(
     // Любое успешное обновление увеличивает счётчик, и ScheduleScreen по нему
     // перечитывает кэш и пересчитывает дату.
     var dataGeneration by remember { mutableIntStateOf(0) }
+
+    // СОСТОЯНИЕ ЭКРАНА РАСПИСАНИЯ ДЛЯ ОТЧЁТА ОБ ОШИБКЕ.
+    //
+    // Отчёт об ошибке открывается из «О программе», когда расписание уже
+    // закрыто, поэтому его состояние надо сохранить здесь: сколько пар
+    // было на экране и какой текст ошибки показывался. Без этого письмо
+    // содержало бы «пар: 0, ошибок нет» при любом реальном сбое — то есть
+    // ровно то самое, ради чего отчёт и нужен.
+    var reportLessons by remember { mutableIntStateOf(0) }
+    var reportError by remember { mutableStateOf<String?>(null) }
 
     // Прогресс обновления, чтобы «30 секунд крутит» не выглядели зависанием.
     var refreshNote by remember { mutableStateOf("") }
@@ -460,13 +477,33 @@ fun AppRoot(
                 prefs.clear(); selection = null; teacherCode = ""; roomNameArg = ""
                 screen = Screen.PICK_ROLE
             },
+            onReport = { screen = Screen.REPORT },
             refreshing = refreshing,
             refreshNote = refreshNote,
             // Тема переехала в «Настройки», поэтому здесь её переключателя
             // нет и лямбда не передаётся.
         )
 
-        Screen.FAVORITES -> FavoritesScreen(
+        
+        // ───────── «Сообщить об ошибке» ─────────
+        //
+        // Данные отчёта собираются здесь, а не на экране отчёта: сведения о
+        // состоянии расписания живут в AppRoot (роль, выбор) и в кэше, и
+        // экран отчёта должен показать то, что было на момент нажатия.
+        Screen.REPORT -> ReportScreen(
+            report = ReportData(
+                versionName = BuildConfig.VERSION_NAME,
+                versionCode = BuildConfig.VERSION_CODE,
+                role = role,
+                selection = selection,
+                lessonsShown = reportLessons,
+                errorText = reportError,
+                updateCheckedAt = UpdateChecker.lastCheckedAt(context),
+            ),
+            onBack = { screen = Screen.ABOUT },
+        )
+
+Screen.FAVORITES -> FavoritesScreen(
             prefs = prefs,
             onOpen = { r, value ->
                 // Открытие из избранного. Здесь восстанавливается всё, что нужно
@@ -538,7 +575,8 @@ fun AppRoot(
                 teacherCode = ""
                 roomNameArg = ""
                 screen = Screen.PICK_ROLE
-            }
+            },
+            onScreenState = { n, err -> reportLessons = n; reportError = err },
         )
     }
 }
@@ -565,6 +603,7 @@ private fun ScheduleBody(
     refreshNote: String,
     onChangeEntity: () -> Unit,
     onChangeRole: () -> Unit,
+    onScreenState: (Int, String?) -> Unit = { _, _ -> },
 ) {
     val group = selection
     if (group == null) {
@@ -586,6 +625,7 @@ private fun ScheduleBody(
         refreshNote = refreshNote,
         onChangeEntity = onChangeEntity,
         onChangeRole = onChangeRole,
+        onScreenState = onScreenState,
     )
 }
 
