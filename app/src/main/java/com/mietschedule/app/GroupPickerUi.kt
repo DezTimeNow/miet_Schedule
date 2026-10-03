@@ -70,6 +70,10 @@ fun GroupPickerScreen(
     var openCode by remember { mutableStateOf<String?>(null) }
     var favs by remember { mutableStateOf(setOf<String>()) }
 
+    // Контекст для пересчёта напоминаний. LocalContext — @Composable-функция,
+    // поэтому вызывается здесь, а не внутри обработчика нажатия.
+    val appCtx = LocalContext.current
+
     // Избранное перечитываем при каждом входе на экран
     LaunchedEffect(Unit) {
         favs = groups.filter { prefs.isFav(it) }.toSet()
@@ -208,7 +212,14 @@ fun GroupPickerScreen(
                                                         isFav = g in favs,
                                                         isCurrent = g == currentGroup,
                                                         onClick = { prefs.save(g); onChosen(g) },
-                                                        onFav = { favs = favs.toggle(g, prefs) }
+                                                        onFav = {
+                favs = favs.toggle(g, prefs)
+                // Отметка избранного меняет список групп для напоминаний —
+                // пересчитываем будильники сразу, а не по фоновой задаче.
+                // Контекст берём ДО лямбды: LocalContext — @Composable-функция,
+                // внутри обработчика вызывать её нельзя.
+                runCatching { ReminderScheduler.reschedule(appCtx, MietApi(appCtx)) }
+            },
                                                     )
                                                 }
                                             }

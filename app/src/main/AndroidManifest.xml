@@ -7,7 +7,17 @@
          установку скачанного APK. Приложение вне магазина обязано обновляться
          само — это единственный способ доставить пользователю новую сборку. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- Уведомление «расписание изменилось». На Android 13+ нужно явное согласие. -->
+    <!-- Напоминание за 10 минут до пары. На Android 13+ уведомления нельзя
+         показывать без явного согласия пользователя, поэтому запрашиваем
+         разрешение при первом включении переключателя. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Система сносит все будильники при перезагрузке; без этого разрешения
+         приложение не узнает о перезагрузке и не восстановит напоминания. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Будильник без сети: setAndAllowWhileIdle работает офлайн, а точные
+         срабатывания не требуем — система может задержать на минуты в Doze,
+         и для «напомнить за 10 минут» это лучше, чем лишнее разрешение,
+         которое Google Play даёт только будильникам и календарям. -->
     <!-- WorkManager переживает перезагрузки устройства. -->
 
     <application
@@ -40,6 +50,25 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+            <!-- Приёмник будильника: система доставляет ему Intent, даже если само
+             приложение не запущено. Экспортировать нельзя — тогда другие
+             приложения смогли бы слать ложные уведомления. -->
+        <receiver
+            android:name=".ReminderReceiver"
+            android:exported="false" />
+
+        <!-- После перезагрузки Android удаляет все будильники. Без этого
+             приёмника приложение молчало бы до первого открытия: будильники
+             восстанавливаются из локального кэша, сеть не требуется. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>
