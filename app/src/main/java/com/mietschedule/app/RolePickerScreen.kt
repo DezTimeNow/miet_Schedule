@@ -54,6 +54,7 @@ fun RolePickerScreen(
     onRefresh: () -> Unit = {},
     onChangeRole: () -> Unit = {},
     onAbout: () -> Unit = {},
+    onSettings: () -> Unit = {},
     refreshing: Boolean = false,
     // Прогресс обновления: обновляются все 344 группы, это ~35 секунд.
     // Без текста ожидание выглядит как зависшее приложение.
@@ -129,8 +130,21 @@ fun RolePickerScreen(
             // «О программе» убрана из шапки ради единого места у кнопки
             // обновления, но доступ не потерян: кнопка стоит под списком ролей.
             Spacer(Modifier.height(14.dp))
-            TextButton(onClick = onAbout, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Text("О программе", color = MIET_BLUE, fontSize = 13.sp)
+            // Настройки и «О программе» — две отдельные кнопки в одном месте.
+            // Раньше тему и напоминания приходилось искать внутри «О программе»,
+            // а это последний экран перед выходом: настройку ищут перед
+            // использованием, а не после.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onSettings) {
+                    Text("Настройки", color = MIET_BLUE, fontSize = 13.sp)
+                }
+                TextButton(onClick = onAbout) {
+                    Text("О программе", color = MIET_BLUE, fontSize = 13.sp)
+                }
             }
         }
     }

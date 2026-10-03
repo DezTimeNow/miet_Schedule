@@ -72,6 +72,7 @@ internal fun backTargetFor(screen: Screen, hasSelection: Boolean): Screen = when
     Screen.PICK_ENTITY -> Screen.PICK_ROLE
     Screen.SCHEDULE -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
     Screen.FAVORITES -> if (hasSelection) Screen.SCHEDULE else Screen.PICK_ROLE
+    Screen.SETTINGS -> Screen.PICK_ROLE
     Screen.ABOUT -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
     // С этого экрана BackHandler выключен, но стрелка может звать функцию.
     Screen.PICK_ROLE -> Screen.PICK_ROLE
@@ -86,6 +87,18 @@ class MainActivity : ComponentActivity() {
         // Выбор темы живёт здесь, а не в AppRoot: его должен менять экран
         // «О программе», а тот лежит внутри AppRoot. Передаём лямбду.
         var themeModeState by mutableStateOf(loadThemeMode(this))
+
+        // Фоновая актуализация раз в 6 часов.
+        //
+        // ВАЖНО: schedule() трогает WorkManager, а его первая инициализация
+        // читает базу и регистрирует компоненты — это десятки миллисекунд на
+        // ГЛАВНОМ потоке. Вызов прямо здесь давал «Skipped 485 frames» и
+        // ANR на старте (Waited 5014ms for FocusEvent). Поэтому регистрация
+        // уходит в отдельный поток: она не влияет на первый кадр.
+        Thread {
+            runCatching { RefreshWorker.schedule(this) }
+                .onFailure { Log.w("MainActivity", "Фоновая задача не зарегистрирована", it) }
+        }.start()
 
         setContent {
             // Один диалог на всё приложение: его показывает и фоновая проверка
@@ -127,7 +140,7 @@ internal val ScreenSaver = Saver<Screen, String>(
     restore = { key -> Screen.entries.firstOrNull { it.name == key } ?: Screen.PICK_ROLE },
 )
 
-internal enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, ABOUT }
+internal enum class Screen { PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT }
 
 @Composable
 fun AppRoot(
@@ -312,6 +325,7 @@ fun AppRoot(
             onChangeRole = { screen = Screen.PICK_ROLE },
             refreshNote = refreshNote,
             onAbout = { screen = Screen.ABOUT },
+            onSettings = { screen = Screen.SETTINGS },
             refreshing = refreshing,
             onPick = { r ->
                 prefs.saveRole(r)
@@ -386,6 +400,11 @@ fun AppRoot(
             }
         }
 
+        Screen.SETTINGS -> SettingsScreen(
+            onBack = { screen = Screen.PICK_ROLE },
+            onThemeChange = onThemeChange,
+        )
+
         Screen.ABOUT -> AboutScreen(
             versionName = BuildConfig.VERSION_NAME,
             versionCode = BuildConfig.VERSION_CODE,
@@ -398,7 +417,8 @@ fun AppRoot(
             },
             refreshing = refreshing,
             refreshNote = refreshNote,
-            onThemeChange = onThemeChange,
+            // Тема переехала в «Настройки», поэтому здесь её переключателя
+            // нет и лямбда не передаётся.
         )
 
         Screen.FAVORITES -> FavoritesScreen(

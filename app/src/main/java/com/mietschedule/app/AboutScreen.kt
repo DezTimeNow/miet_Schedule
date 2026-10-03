@@ -1,6 +1,5 @@
 package com.mietschedule.app
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,11 +44,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 
 /**
@@ -72,7 +70,6 @@ fun AboutScreen(
     onChangeRole: () -> Unit = {},
     refreshing: Boolean = false,
     refreshNote: String = "",
-    onThemeChange: (Int) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -202,37 +199,9 @@ fun AboutScreen(
 
             Spacer(Modifier.height(4.dp))
 
-            // Переключатель темы. Значение берём из хранилища: экран может
-            // открыться раньше, чем MainActivity успеет прочитать настройку,
-            // поэтому показываем сохранённое, а не текущее состояние темы.
-            var currentMode by remember { mutableStateOf(loadThemeMode(ctx)) }
-
-            Text(
-                "Оформление",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf(THEME_SYSTEM, THEME_LIGHT, THEME_DARK).forEach { mode ->
-                    val selected = currentMode == mode
-                    FilterChip(
-                        selected = selected,
-                        onClick = {
-                            currentMode = mode
-                            onThemeChange(mode)
-                        },
-                        label = { Text(themeModeLabel(mode), fontSize = 12.sp) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
+            // Напоминания и выбор темы перенесены в «Настройки»:
+            // их ищут перед использованием, а «О программе» открывают,
+            // когда хотят почитать о приложении. Доступ — с главного экрана.
 
             AboutBlock(
                 "Как это работает",
