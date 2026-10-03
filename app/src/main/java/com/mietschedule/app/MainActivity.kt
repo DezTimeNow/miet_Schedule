@@ -335,6 +335,12 @@ fun AppRoot(
                     api, prefs, selection,
                     onChosen = { chosen ->
                         selection = chosen
+                        // Группу нужно сохранить: без этого при следующем
+                        // запуске prefs.load() пуст, приложение открывается на
+                        // выборе роли, и каждый раз группу приходится выбирать
+                        // заново. Преподаватель и аудитория здесь сохраняют
+                        // своё значение — студент не сохранял ничего.
+                        prefs.save(chosen)
                         screen = Screen.SCHEDULE
                     },
                     onSwitchRole = { screen = Screen.PICK_ROLE },
