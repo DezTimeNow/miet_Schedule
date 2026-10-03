@@ -162,7 +162,14 @@ fun TapChipScreen(onBack: () -> Unit) {
                 when (val r = ChipTop.submit(name, current, ChipTop.installId(ctx))) {
                     is ChipTop.SubmitResult.Saved -> {
                         rank = r.rank
-                        r.top?.let { top = it }
+                        // Новый скрипт отдаёт топ в ответе на запись, и
+                        // второй запрос не нужен. Старый его не отдаёт, и
+                        // тогда таблица молча замирала бы на том снимке,
+                        // что был при открытии экрана. Поэтому при пустом
+                        // top делаем отдельное чтение: медленнее, но список
+                        // остаётся живым на любой версии скрипта.
+                        val fresh = r.top ?: ChipTop.loadTop()
+                        fresh?.let { top = it }
                     }
                     else -> Unit
                 }
