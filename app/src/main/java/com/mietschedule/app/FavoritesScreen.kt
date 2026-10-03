@@ -59,7 +59,6 @@ fun FavoritesScreen(
     onChangeRole: () -> Unit = {},
     refreshing: Boolean = false,
     refreshNote: String = "",
-    onOpenFavorites: (() -> Unit)? = null,
 ) {
     // Читаем один раз при входе: дальше перечитываем после каждого изменения.
     var tick by remember { mutableStateOf(0) }
@@ -89,8 +88,7 @@ fun FavoritesScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 refreshing = refreshing,
-                onBack = onBack,
-                onOpenFavorites = onOpenFavorites
+                onBack = onBack
             )
         }
     ) { pad ->

@@ -70,7 +70,6 @@ fun AboutScreen(
     onChangeRole: () -> Unit = {},
     refreshing: Boolean = false,
     refreshNote: String = "",
-    onOpenFavorites: (() -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -90,8 +89,7 @@ fun AboutScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 refreshing = refreshing,
-                onBack = onBack,
-                onOpenFavorites = onOpenFavorites
+                onBack = onBack
             )
         }
     ) { pad ->

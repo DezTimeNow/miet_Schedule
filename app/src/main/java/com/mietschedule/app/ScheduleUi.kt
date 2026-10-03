@@ -73,7 +73,6 @@ fun ScheduleScreen(
     refreshNote: String = "",
     onChangeEntity: () -> Unit,
     onChangeRole: () -> Unit,
-    onOpenFavorites: () -> Unit = {}
 ) {
     // Данные и загрузка вынесены в rememberScheduleData (ScheduleData.kt):
     // здесь остаётся только отрисовка. Раньше те же 190 строк загрузки
@@ -288,8 +287,7 @@ fun ScheduleScreen(
                 // группа молчала бы до следующей фоновой задачи (до 6 часов).
                 runCatching { ReminderScheduler.reschedule(ctx, api) }
             },
-                onOpenFavorites = onOpenFavorites
-            )
+                    )
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {

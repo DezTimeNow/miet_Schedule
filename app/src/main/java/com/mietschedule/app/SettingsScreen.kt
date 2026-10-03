@@ -54,7 +54,6 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit = {},
     onChangeRole: () -> Unit = {},
-    onOpenFavorites: (() -> Unit)? = null,
     onThemeChange: (Int) -> Unit = {},
 ) {
     val ctx = LocalContext.current
@@ -72,7 +71,6 @@ fun SettingsScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 onBack = onBack,
-                onOpenFavorites = onOpenFavorites,
             )
         }
     ) { pad ->
