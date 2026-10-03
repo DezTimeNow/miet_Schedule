@@ -21,11 +21,11 @@ android {
         // Соглашение о номерах: сборка N соответствует релизу 0.N. Номер
         // после точки в теге GitHub обязан совпадать с versionCode, иначе
         // UpdateChecker перестаёт видеть обновления.
-        versionCode = 35
+        versionCode = 36
         // Пользователю показываем семантическую строку: пре-релиз помечен
         // суффиксом -alpha, как это делают в сторах. «О программе» выводит
         // её вместе с номером сборки.
-        versionName = "0.35.0-alpha"
+        versionName = "0.36.0-alpha"
     }
 
     buildTypes {
@@ -78,6 +78,10 @@ dependencies {
     // converter-gson удалены как мёртвые — в коде не было ни одного обращения.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
+    // Фоновая актуализация расписания. Без неё данные обновлялись только
+    // при открытии приложения или нажатии «Обновить всё»: пользователь,
+    // запускавший его раз в день, месяцами видел старый кэш.
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
 }
