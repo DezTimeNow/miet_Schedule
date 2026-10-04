@@ -21,6 +21,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.PlatformTextStyle
@@ -119,7 +121,14 @@ fun MietTopBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
         navigationIcon = {
             if (onBack != null) {
-                IconButton(onClick = onBack) {
+                IconButton(
+                    onClick = onBack,
+                    // Стрелка нарисована текстом, а не иконкой, поэтому у
+                    // IconButton не оказалось описания: TalkBack читал «‹»
+                    // как символ, а не как действие. Разметка даёт кнопке
+                    // имя, не меняя внешний вид.
+                    modifier = Modifier.semantics { contentDescription = "Назад" },
+                ) {
                     Text("‹", color = MaterialTheme.colorScheme.surface, fontSize = 28.sp)
                 }
             } else {
@@ -178,14 +187,22 @@ fun MietTopBar(
             // Место под «Избранное» в шапке больше не нужно: кнопка живёт в
             // главном меню под выбором роли. Слот убираем целиком, чтобы
             // заголовок стал шире на всех экранах.
-            IconButton(onClick = onRefresh, enabled = !refreshing) {
+            IconButton(
+                onClick = onRefresh,
+                enabled = !refreshing,
+                // Описание меняется вместе с состоянием: пока кнопка занята,
+                // TalkBack не должен обещать действие, которого не будет.
+                modifier = Modifier.semantics {
+                    contentDescription = if (refreshing) "Обновляю всё" else "Обновить всё"
+                },
+            ) {
                 // 343 группы — это ~50 секунд, поэтому вместо иконки крутилка:
                 // молчащее ожидание читается как зависание.
                 if (refreshing) CircularProgressIndicator(
                     Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.surface
                 ) else Icon(
                     Icons.Filled.Refresh,
-                    contentDescription = "Обновить всё",
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.size(22.dp)
                 )

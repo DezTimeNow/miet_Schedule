@@ -1517,4 +1517,129 @@ class ChipTopTest {
         assertFalse("Энтития перевода не должна печататься", clean.contains("&#10;"))
         assertEquals("первая\nвторая", clean)
     }
+
+    /**
+     * Отказ таблицы не должен оставаться без реакции на экране.
+     *
+     * Найдено при живом тестировании: сервер отверг ник («error: nick»),
+     * а экран продолжал показывать растущий счёт. Игрок видел настоящий
+     * результат, который после перезапуска исчезал: в таблицу не попадало
+     * ничего. Отказ раньше уходил в ветку `else -> Unit`.
+     */
+    @Test
+    fun `отказ скрипта разбирается в понятную причину`() {
+        val rejected = ChipTop.parseSubmit(
+            """{"ok":false,"error":"nick"}""",
+        )
+        assertTrue("Отказ должен распознаваться", rejected is ChipTop.SubmitResult.Rejected)
+        val reason = (rejected as ChipTop.SubmitResult.Rejected).reason
+        assertTrue(
+            "Причина должна называть ник, а не код ошибки",
+            reason.contains("ник", ignoreCase = true),
+        )
+        assertFalse("Код ошибки не должен показываться игроку", reason.contains("nick", ignoreCase = true))
+    }
+
+    /**
+     * Отказ по счёту и по игроку тоже распознаются, а не молчат.
+     */
+    @Test
+    fun `все отказы скрипта распознаются`() {
+        val cases = mapOf(
+            "install" to "игрок",
+            "score" to "Счёт",
+        )
+        for ((code, marker) in cases) {
+            val r = ChipTop.parseSubmit("""{"ok":false,"error":"$code"}""")
+            assertTrue("Отказ $code должен распознаваться", r is ChipTop.SubmitResult.Rejected)
+            assertTrue(
+                "Отказ $code должен давать понятный текст, а не '$code'",
+                (r as ChipTop.SubmitResult.Rejected).reason.contains(marker, ignoreCase = true),
+            )
+        }
+    }
+
+    /**
+     * Высота под строку «место» и под отказ зарезервирована.
+     *
+     * Прыжок вёрстки на игровом экране был найден дважды: строка «место N»
+     * появляется не с первого кадра (до первой синхронизации места нет) и
+     * сдвигала микросхему с таблицей игроков. Отказ появляется ещё позже и
+     * сдвигал то же самое.
+     */
+    @Test
+    fun `строки места и отказа не сдвигают вёрстку`() {
+        val screen = srcFile("TapChipScreen.kt")
+
+        assertTrue(
+            "Высота под строку места должна быть задана явно",
+            screen.contains("PLACE_BOX_HEIGHT"),
+        )
+        assertTrue(
+            "Высота под сообщение об отказе должна быть задана явно",
+            screen.contains("REJECT_BOX_HEIGHT"),
+        )
+        assertTrue(
+            "Место должно рисоваться в боксе постоянной высоты, а не по условию",
+            screen.contains("Modifier.height(PLACE_BOX_HEIGHT.dp)"),
+        )
+        assertTrue(
+            "Отказ не должен уходить в заглушку, молчание здесь и было багом",
+            !screen.contains("else -> Unit"),
+        )
+    }
+
+    /**
+     * Кнопки-стрелки должны называться для TalkBack.
+     *
+     * Стрелки нарисованы текстом, а не иконками, поэтому у IconButton не
+     * оказалось описания: TalkBack читал символ «‹» вместо действия.
+     */
+    @Test
+    fun `кнопки-стрелки объявлены для TalkBack`() {
+        val bar = srcFile("MietTopBar.kt")
+        val schedule = srcFile("ScheduleUi.kt")
+
+        for (marker in listOf(
+            "contentDescription = \"Назад\"",
+            "contentDescription = if (refreshing)",
+        )) {
+            assertTrue("В шапке нет описания: $marker", bar.contains(marker))
+        }
+        assertTrue(
+            "Стрелка недели назад не объявлена",
+            schedule.contains("contentDescription = \"Предыдущая неделя\""),
+        )
+        assertTrue(
+            "Стрелка недели вперёд не объявлена",
+            schedule.contains("contentDescription = \"Следующая неделя\""),
+        )
+    }
+
+    /**
+     * Отказ не должен переноситься на следующий ник.
+     *
+     * Найдено при проверке на устройстве: после отказа по нику Test
+     * игрок сменил имя на Kran, сервер на него ответил нормально, счёт пошёл
+     * и место показалось — но строка «Такой ник не принимается» осталась на
+     * экране и утверждала обратное.
+     */
+    @Test
+    fun `отказ не переносится на другой ник`() {
+        // Тот же порядок, что в экране: смена ника обязана чистить отказ.
+        var rejectNote = "Такой ник не принимается"
+        var nick = "Test"
+
+        fun onNickChanged(newNick: String) {
+            nick = newNick
+            rejectNote = ""
+        }
+
+        onNickChanged("Kran")
+        assertTrue(
+            "Отказ прежнего ника не должен оставаться на экране",
+            rejectNote.isEmpty(),
+        )
+        assertEquals("Kran", nick)
+    }
 }

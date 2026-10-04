@@ -20,6 +20,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -348,7 +350,10 @@ fun ScheduleScreen(
                     // showWeek = true в обоих направлениях. Обратно фильтр
                     // возвращается только нажатием на «Сегодня».
                     onClick = { weekOffset--; showWeek = true },
-                    enabled = weekOffset > -4
+                    enabled = weekOffset > -4,
+                    // Стрелка нарисована текстом, а не иконкой, поэтому
+                    // TalkBack читал «‹» как символ, а не как действие.
+                    modifier = Modifier.semantics { contentDescription = "Предыдущая неделя" },
                 ) {
                     Text("\u2039", color = MIET_BLUE, fontSize = 22.sp)
                 }
@@ -366,7 +371,8 @@ fun ScheduleScreen(
                 )
                 IconButton(
                     onClick = { weekOffset++ ; showWeek = true },
-                    enabled = weekOffset < 4
+                    enabled = weekOffset < 4,
+                    modifier = Modifier.semantics { contentDescription = "Следующая неделя" },
                 ) {
                     Text("\u203A", color = MIET_BLUE, fontSize = 22.sp)
                 }

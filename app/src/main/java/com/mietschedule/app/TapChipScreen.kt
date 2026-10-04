@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -143,6 +144,12 @@ fun TapChipScreen(onBack: () -> Unit) {
     // надпись прыгала бы на каждый тап.
     var rank by remember { mutableIntStateOf(0) }
 
+    // Отказ таблицы. Счётчик при этом продолжал расти на экране, а в
+    // таблицу не попадало ничего: результат выглядел настоящим и пропадал
+    // после перезапуска. Причина отказа — например, запрещённый ник —
+    // показывается прямо на игровом экране.
+    var rejectNote by remember { mutableStateOf("") }
+
     // ── анимации нажатия ─────────────────────────────────────────────
     // press держится, пока палец на корпусе; counterScale подпрыгивает на
     // счётчике через graphicsLayer, то есть без влияния на раскладку.
@@ -164,6 +171,10 @@ fun TapChipScreen(onBack: () -> Unit) {
     // очки и начал с ними.
     LaunchedEffect(top, nick) {
         val name = nick.trim()
+        // Отказ относится к прежнему нику. После смены имени он больше не
+        // про нас: сервер на новый ник отвечает нормально, а старая строка
+        // оставалась на экране и вводила в заблуждение.
+        rejectNote = ""
         if (name.isEmpty()) {
             baseScore = 0
             score = 0
@@ -254,7 +265,13 @@ fun TapChipScreen(onBack: () -> Unit) {
                             }
                         }
                     }
-                    else -> Unit
+                    is ChipTop.SubmitResult.Rejected -> {
+                        rejectNote = r.reason
+                    }
+
+                    is ChipTop.SubmitResult.NoNetwork -> {
+                        rejectNote = "Нет связи: результат пока не отправлен"
+                    }
                 }
             } finally {
                 // Пауза чуть больше времени вызова: скрипт всё равно один на
@@ -364,13 +381,36 @@ fun TapChipScreen(onBack: () -> Unit) {
                     // и интерполяция не сработала: на экране выходило
                     // «место $rank». Сейчас это [rankLabel], где значение
                     // подставляется как число.
+                    //
+                    // Высота ЗАРЕЗЕРВИРОВАНА. Раньше строка появлялась по
+                    // условию и при первом появлении сдвигала микросхему и
+                    // таблицу игроков вниз — это и был прыжок интерфейса.
                     val place = rankLabel(rank)
-                    if (place != null) {
+                    Box(
+                        Modifier.height(PLACE_BOX_HEIGHT.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Text(
-                            place,
+                            place.orEmpty(),
                             fontSize = 15.sp,
                             color = LocalAppColors.current.muted,
                         )
+                    }
+
+                    // Отказ таблицы — тоже в зарезервированной строке, чтобы
+                    // появление сообщения снова не сдвигало вёрстку.
+                    Box(
+                        Modifier.height(REJECT_BOX_HEIGHT.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (rejectNote.isNotEmpty()) {
+                            Text(
+                                rejectNote,
+                                fontSize = 13.sp,
+                                color = LocalAppColors.current.error,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
 
                     Spacer(Modifier.height(10.dp))
@@ -514,6 +554,16 @@ internal fun rankLabel(rank: Int): String? = when {
  */
 private const val SCORE_FONT_SP = 46f
 private const val SCORE_BOX_HEIGHT = 62
+
+// Зарезервированная высота под строку «место N». Строка появляется не с
+// первого кадра: до первой синхронизации места ещё нет. Без резерва её
+// появление сдвигало микросхему и таблицу игроков.
+private const val PLACE_BOX_HEIGHT = 22
+
+// Зарезервированная высота под сообщение об отказе таблицы. Сообщение
+// появляется только при отказе, и по той же причине должно не двигать
+// вёрстку.
+private const val REJECT_BOX_HEIGHT = 20
 
 /** Имя игрока и кнопка смены. */
 @Composable

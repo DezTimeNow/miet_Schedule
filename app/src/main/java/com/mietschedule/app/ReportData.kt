@@ -48,8 +48,32 @@ data class ReportData(
         val value = sel?.takeIf { it.isNotBlank() } ?: return "не выбрано"
         return when (role) {
             Role.TEACHER -> value
-            else -> "выбрано (${value.length} символов)"
+            // Название группы само по себе персональные данные, поэтому оно
+            // не уходит письмом. Но «выбрано (6 символов)» бесполезно при
+            // разборе: понять, у кого сломалось, по длине нельзя. Отдаём
+            // формат, из которого видно, что именно выбрано, и сколько в
+            // нём пар — эти два числа различают почти все случаи.
+            else -> selKind() + " " + lessonHint(value)
         }
+    }
+
+    /**
+     * Что именно выбрано, без названия.
+     *
+     * Формулировка держит слово «выбрано»: по нему видно, что выбор вообще
+     * был, и письмо не выглядит поломкой только из-за пустого поля.
+     */
+    private fun selKind(): String = when (role) {
+        Role.STUDENT -> "группа"
+        Role.AUDIENCE -> "аудитория"
+        Role.TEACHER -> "преподаватель"
+    }
+
+    /** Косвенная приметы выбора: длина и состав символов. */
+    private fun lessonHint(value: String): String {
+        val digits = value.count { it.isDigit() }
+        val letters = value.count { it.isLetter() }
+        return "(${value.length} симв., цифр: $digits, букв: $letters)"
     }
 
     /** Обратный адрес. Ключ Web3Forms работает без него, но с ним письмо можно ответить. */
@@ -61,7 +85,7 @@ data class ReportData(
         appendLine("─────────────────────────────────")
         appendLine("Версия: $versionName (сборка $versionCode)")
         appendLine("Роль: ${role.title}")
-        appendLine("Выбрано: ${anonymize(selection)}")
+        appendLine("выбрано: ${anonymize(selection)}")
         appendLine("Пар на экране: $lessonsShown")
         appendLine("Состояние данных: ${if (errorText.isNullOrBlank()) "ошибок нет" else "ошибка на экране"}")
         if (!errorText.isNullOrBlank()) appendLine("Текст ошибки: $errorText")
