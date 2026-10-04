@@ -428,7 +428,7 @@ class ChipTopTest {
     @Test
     fun `название мини-игры общее для меню и игры`() {
         assertEquals("Тапать микросхему", GAME_TITLE)
-        assertEquals("будь лучшим!!", GAME_TAGLINE)
+        assertEquals("мини-игра", GAME_TAGLINE)
         val game = srcFile("TapChipScreen.kt")
         assertTrue("Заголовок игры берёт название из константы", game.contains("GAME_TITLE"))
     }
@@ -524,9 +524,21 @@ class ChipTopTest {
     @Test
     fun `смена ника не обнуляет результат`() {
         val game = srcFile("TapChipScreen.kt")
+        // Обнуление счёта при пустом нике обязательно: это новый игрок, и
+        // он не должен наследовать очки чужого. Запрещать его нельзя.
+        // А вот обнуление ПРИ СМЕНЕ НИКА на непустой — как раз запрещено,
+        // и ради него база счёта вынесена в отдельное состояние.
+        assertTrue(
+            "при пустом нике счёт должен обнуляться",
+            game.contains("if (name.isEmpty()) {") && game.contains("baseScore = 0")
+        )
         assertFalse(
-            "При смене ника счёт обнуляться не должен",
-            game.contains("score = 0"),
+            "смена ника не должна обнулять счёт напрямую",
+            stripComments(game).contains("score = 0\n        }")
+        )
+        assertTrue(
+            "база счёта должна расти, а не обнуляться",
+            game.contains("if (known > baseScore)")
         )
         assertFalse(
             "Сброс строки в таблице больше не отправляется",
@@ -1164,6 +1176,131 @@ class ChipTopTest {
         assertTrue(
             "метка проверки должна относиться к своей роли",
             w.contains("api.markCheck(role, group)")
+        )
+    }
+
+    /**
+     * Клиент подстраивает счёт под серверный.
+     *
+     * Требование владельца от 0.49: продолжить под чужим ником, а не
+     * начинать с нуля, и синхронизироваться, когда тем же ником тапает
+     * кто-то ещё. Скрипт возвращает авторитетный счёт полем `score`;
+     * раньше его не было, и клиент оставался со своим счётчиком, хотя в
+     * таблице у того же ника стояли чужие очки.
+     */
+    @Test
+    fun `счётчик продолжает чужой результат`() {
+        val game = srcFile("TapChipScreen.kt")
+        val top = srcFile("ChipTop.kt")
+
+        // Серверный счёт разбирается из ответа.
+        assertTrue(
+            "ответ скрипта должен содержать авторитетный счёт",
+            top.contains("""score = obj.get("score")?.asInt ?: 0""")
+        )
+
+        // База, от которой растёт счётчик, и она отдельна от результата.
+        assertTrue(
+            "нужна отдельная база счёта",
+            game.contains("var baseScore by remember { mutableIntStateOf(0) }")
+        )
+        assertTrue(
+            "база не должна совпадать с результатом",
+            game.contains("var score by remember { mutableIntStateOf(0) }")
+        )
+
+        // Старт с уже набранного: своя строка в топе поднимает базу.
+        assertTrue(
+            "экран должен брать базу из своей строки топа",
+            game.contains("top?.rows?.firstOrNull { it.nick == name }?.score")
+        )
+        // Синхронизация по ответу сервера.
+        assertTrue(
+            "экран должен подтягиваться к серверному счёту",
+            game.contains("r.score > 0")
+        )
+        // Счёт нельзя обнулять при чужом результате: он только растёт.
+        assertTrue(
+            "подтягивание должно быть только вверх",
+            game.contains("score = maxOf(score, authoritative)")
+        )
+    }
+
+    /**
+     * Сервер ищет игрока и по нику, а не только по ключу.
+     *
+     * Ключ строки выводится из ника, но смена ника его меняет, и вернувшись
+     * к прежнему нику игрок получал вторую строку: в топе оказывались два
+     * одинаковых ника. Личность игрока — ник, поэтому сверка идёт по обоим.
+     */
+    @Test
+    fun `сервер ищет игрока по нику`() {
+        val gs = java.io.File("/tmp/combined.gs").takeIf { it.exists() }?.readText() ?: return
+        assertTrue(
+            "поиск строки игрока должен учитывать ник",
+            gs.contains("sameByNick")
+        )
+        assertTrue(
+            "сравнение должно быть без учёта регистра",
+            gs.contains("toLowerCase() === v.nick.toLowerCase()")
+        )
+        // Место считается по тому же правилу, иначе надпись исчезает.
+        assertTrue(
+            "rankOf должен искать по нику",
+            gs.contains("if (low && String(sorted[i][0]).toLowerCase() === low) return i + 1;")
+        )
+        // Регрессия, найденная тестом: при «счёт не улучшился» место
+        // возвращалось как 0, и надпись пропадала в самый обычный момент.
+        assertTrue(
+            "при dup строка игрока должна попадать в набор для подсчёта места",
+            gs.contains("kept.concat([mine], rest)")
+        )
+    }
+
+    /**
+     * Кнопка ⭯ везде показывает крутилку, пока обновление идёт.
+     *
+     * Общее обновление занимает около 30 секунд на 343 группы. Раньше
+     * ScheduleScreen и SettingsScreen не получали признак обновления, и
+     * кнопка выглядела обычной и нажималась снова, начиная второй круг
+     * обхода поверх первого.
+     */
+    @Test
+    fun `кнопка обновления блокируется на время обновления`() {
+        val main = srcFile("MainActivity.kt")
+
+        // Экран расписания.
+        assertTrue(
+            "ScheduleScreen должен принимать признак общего обновления",
+            main.contains("refreshingAll: Boolean = false")
+        )
+        assertTrue(
+            "AppRoot должен передавать признак обновления",
+            main.contains("refreshingAll = refreshing")
+        )
+
+        // Настройки: параметра не было вовсе.
+        val settings = srcFile("SettingsScreen.kt")
+        assertTrue(
+            "SettingsScreen должен принимать refreshing",
+            settings.contains("refreshing: Boolean = false")
+        )
+        assertTrue(
+            "шапка настроек должна показывать крутилку",
+            settings.contains("refreshing = refreshing,")
+        )
+
+        // Отчёт: ⭯ больше не заглушка «назад».
+        // Комментарии не в счёт: в ReportScreen есть честное напоминание
+        // о прежней заглушке, и поиск по сырому файлу спотыкался бы о него.
+        val report = stripComments(srcFile("ReportScreen.kt"))
+        assertFalse(
+            "кнопка обновления в отчёте не должна вести назад",
+            report.contains("onRefresh = onBack")
+        )
+        assertTrue(
+            "кнопка обновления в отчёте должна проверять обновления",
+            report.contains("onRefresh = onCheckUpdate")
         )
     }
 

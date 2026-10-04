@@ -70,6 +70,16 @@ fun ScheduleScreen(
     dataGeneration: Int = 0,
     onRefreshAll: () -> Unit = {},
     refreshNote: String = "",
+    /**
+     * Идёт ли общее обновление по кнопке ⭯.
+     *
+     * Раньше шапка брала `refreshing` у самого экрана, то есть показывала
+     * крутилку только пока грузится сам экран. Нажатие «Обновить всё»
+     * обновляет 343 группы около 30 секунд, и всё это время кнопка выглядела
+     * как обычная и нажималась снова — второй круг обхода поверх первого.
+     * Теперь крутилка показывает и общее обновление.
+     */
+    refreshingAll: Boolean = false,
     onChangeEntity: () -> Unit,
     onChangeRole: () -> Unit,
     // Сообщает наружу, что сейчас на экране: сколько пар и есть ли ошибка.
@@ -278,7 +288,8 @@ fun ScheduleScreen(
                 subtitle = if (semestr.isBlank()) "Загрузка…" else semestr,
                 onRefresh = onRefreshAll,
                 onChangeRole = onChangeRole,
-                refreshing = refreshing,
+                // Крутилка на любой загрузке: своей или общей по кнопке.
+                refreshing = refreshing || refreshingAll,
                 // Назад — к списку своей сущности (смена группы/аудитории).
                 onBack = onChangeEntity,
                 // Звезда уехала из строки вкладок в шапку: там она стояла

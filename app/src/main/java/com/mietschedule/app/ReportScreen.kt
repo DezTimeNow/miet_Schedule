@@ -57,6 +57,13 @@ import kotlinx.coroutines.launch
 fun ReportScreen(
     report: ReportData,
     onBack: () -> Unit,
+    /**
+     * Проверить обновления приложения — действие кнопки ⭯ в шапке.
+     *
+     * Отдельный параметр, а не заглушка: тот же вызов из «О программе»
+     * открывает диалог загрузки, и на экране отчёта он тоже уместен.
+     */
+    onCheckUpdate: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -78,7 +85,11 @@ fun ReportScreen(
                 // «О программе», и человек решал, что кнопка сломана.
                 // Здесь ⭯ и «Меню» ведут в «О программе» — оттуда этот
                 // экран и открывается, и там же живёт «Проверить обновления».
-                onRefresh = onBack,
+                // ⭯ на экране отчёта проверяет обновления приложения: тут
+                // нечего обновлять в расписании, а заглушка onRefresh =
+                // onBack молча возвращала в «О программе», и человек решал,
+                // что кнопка сломана.
+                onRefresh = onCheckUpdate,
                 onChangeRole = onBack,
                 onBack = onBack,
             )

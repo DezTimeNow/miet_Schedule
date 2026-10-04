@@ -519,6 +519,7 @@ fun AppRoot(
             onRefresh = { refreshCurrent() },
             onChangeRole = { screen = Screen.PICK_ROLE },
             onThemeChange = onThemeChange,
+            refreshing = refreshing,
         )
 
         Screen.ABOUT -> AboutScreen(
@@ -552,6 +553,16 @@ fun AppRoot(
                 updateCheckedAt = UpdateChecker.lastCheckedAt(context),
             ),
             onBack = { screen = Screen.ABOUT },
+            // ⭯ в шапке отчёта проверяет обновления приложения.
+            onCheckUpdate = {
+                scope.launch {
+                    when (val r = UpdateChecker.checkNow(context, BuildConfig.VERSION_CODE)) {
+                        is UpdateCheckResult.Available -> onUpdateFound(r.info)
+                        is UpdateCheckResult.UpToDate -> Log.i("Report", "Свежая версия")
+                        is UpdateCheckResult.Failed -> Log.w("Report", r.reason)
+                    }
+                }
+            },
         )
 
         // ───────── мини-игра «Тапни микросхему» ─────────
@@ -620,6 +631,10 @@ Screen.FAVORITES -> FavoritesScreen(
             dataGeneration = dataGeneration,
             onRefreshAll = { refreshCurrent() },
             refreshNote = refreshNote,
+            // Общее обновление идёт около 30 секунд. Без этого кнопка ⭯ на
+            // экране расписания оставалась активной и нажималась повторно,
+            // начиная второй круг обхода поверх первого.
+            refreshingAll = refreshing,
             onChangeEntity = { screen = Screen.PICK_ENTITY },
             // Из избранного аудитория открывается по имени (value), а код
             // неизвестен — фильтр кэша отработает по имени, это верно.
@@ -649,6 +664,8 @@ private fun ScheduleBody(
     dataGeneration: Int,
     onRefreshAll: () -> Unit,
     refreshNote: String,
+    /** Идёт ли общее обновление по ⭯ — нужно для крутилки в шапке. */
+    refreshingAll: Boolean = false,
     onChangeEntity: () -> Unit,
     onChangeRole: () -> Unit,
     onScreenState: (Int, String?) -> Unit = { _, _ -> },
@@ -671,6 +688,7 @@ private fun ScheduleBody(
         dataGeneration = dataGeneration,
         onRefreshAll = onRefreshAll,
         refreshNote = refreshNote,
+        refreshingAll = refreshingAll,
         onChangeEntity = onChangeEntity,
         onChangeRole = onChangeRole,
         onScreenState = onScreenState,

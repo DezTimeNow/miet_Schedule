@@ -55,6 +55,14 @@ fun SettingsScreen(
     onRefresh: () -> Unit = {},
     onChangeRole: () -> Unit = {},
     onThemeChange: (Int) -> Unit = {},
+    /**
+     * Идёт ли общее обновление по ⭯.
+     *
+     * Параметра не было, поэтому кнопка обновления в шапке «Настроек» не
+     * показывала крутилку и оставалась нажимаемой все 30 секунд обхода
+     * 343 групп: повторное нажатие начинало второй круг поверх первого.
+     */
+    refreshing: Boolean = false,
 ) {
     val ctx = LocalContext.current
 
@@ -71,6 +79,7 @@ fun SettingsScreen(
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 onBack = onBack,
+                refreshing = refreshing,
             )
         }
     ) { pad ->
