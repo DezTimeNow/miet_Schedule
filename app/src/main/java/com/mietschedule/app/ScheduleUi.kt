@@ -399,6 +399,22 @@ fun ScheduleScreen(
                 }
             }
 
+            // ─── строка «что у меня дальше» ───
+            //
+            // Стоит между строкой обновления и вкладками: она отвечает на
+            // вопрос «что сейчас», а переключатель «Сегодня / Вся неделя» —
+            // на вопрос «что показать». Порядок именно такой, чтобы человек
+            // читал сверху вниз как объяснение.
+            //
+            // Показывается только когда пара найдена. Пустая плашка занимала
+            // бы место и повторяла то, что список ниже уже пишет крупно.
+            if (!loading && error == null && weekLessons.isNotEmpty()) {
+                NextLessonRow(
+                    lessons = weekLessons,
+                    times = times,
+                )
+            }
+
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)

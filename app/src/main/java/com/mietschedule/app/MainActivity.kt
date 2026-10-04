@@ -80,6 +80,8 @@ internal fun backTargetFor(screen: Screen, hasSelection: Boolean): Screen = when
     Screen.REPORT -> Screen.ABOUT
     // Игра открывается из главного меню, поэтому назад — туда же.
     Screen.CHIP_GAME -> Screen.PICK_ROLE
+    // Список аудиторий открывается из главного меню, оттуда и назад.
+    Screen.ROOMS -> Screen.PICK_ROLE
     // С этого экрана BackHandler выключен, но стрелка может звать функцию.
     Screen.PICK_ROLE -> Screen.PICK_ROLE
 }
@@ -166,7 +168,7 @@ internal val ScreenSaver = Saver<Screen, String>(
 // it.name, а не по списку констант, поэтому новый экран в списке restore
 // не нужен.
 internal enum class Screen {
-    PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT, REPORT, CHIP_GAME,
+    PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT, REPORT, CHIP_GAME, ROOMS,
 }
 
 @Composable
@@ -440,6 +442,7 @@ fun AppRoot(
             onSettings = { screen = Screen.SETTINGS },
             onOpenFavorites = { screen = Screen.FAVORITES },
             onOpenChipGame = { screen = Screen.CHIP_GAME },
+            onOpenRooms = { screen = Screen.ROOMS },
             refreshing = refreshing,
             onPick = { r ->
                 prefs.saveRole(r)
@@ -570,6 +573,32 @@ fun AppRoot(
         // Отдельный экран без параметров: он не зависит от выбранной роли
         // или группы, а результат уходит на скрипт таблицы лидеров.
         Screen.CHIP_GAME -> TapChipScreen(onBack = { screen = Screen.PICK_ROLE })
+
+        // ───────── «Аудитории»: кто где и что свободно ─────────
+        //
+        // Отдельный экран, а не режим экрана расписания: здесь нужен весь
+        // список с фильтрами, а расписание показывает одну комнату.
+        // Открытая из списка аудитория переводит роль в AUDIENCE и сразу
+        // показывает расписание — иначе кнопка «Показать свободные» была бы
+        // тупиком: посмотреть можно, а открыть нельзя.
+        Screen.ROOMS -> RoomsScreen(
+            api = api,
+            onOpenRoom = { name ->
+                val code = api.audienceCodeByName(name)
+                prefs.saveRole(Role.AUDIENCE)
+                role = Role.AUDIENCE
+                selection = name
+                roomNameArg = name
+                teacherCode = code?.toString().orEmpty()
+                prefs.saveFor(Role.AUDIENCE, name)
+                screen = Screen.SCHEDULE
+            },
+            onBack = { screen = Screen.PICK_ROLE },
+            onRefresh = { refreshCurrent() },
+            refreshing = refreshing,
+            refreshNote = refreshNote,
+            dataGeneration = dataGeneration,
+        )
 
 Screen.FAVORITES -> FavoritesScreen(
             prefs = prefs,

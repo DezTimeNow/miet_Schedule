@@ -86,6 +86,11 @@ fun RolePickerScreen(
     // и почему она недоступна. Требование владельца: без сети игра не
     // работает вовсе, поэтому и локального счёта нет.
     onOpenChipGame: (() -> Unit)? = null,
+    // Список аудиторий с фильтром свободных. Кнопка в главном меню рядом
+    // с игрой: обе вещи не зависят от выбранной роли и группы, и обе
+    // открываются «с нуля». Требование владельца от 0.54: «в аудиториях
+    // хочу кнопку "Показать свободные"».
+    onOpenRooms: (() -> Unit)? = null,
     refreshing: Boolean = false,
     // Прогресс обновления: обновляются все 344 группы, это ~35 секунд.
     // Без текста ожидание выглядит как зависшее приложение.
@@ -173,6 +178,15 @@ fun RolePickerScreen(
                 enabled = onOpenChipGame != null,
             )
 
+            Spacer(Modifier.height(10.dp))
+            // Список аудиторий — рядом с игрой, обе карточки одного типа
+            // (не служебная кнопка, а то, ради чего открывают). Карточку
+            // игры не трогаем: перенос обеих на FlowRow ломал бы её ширину.
+            RoomsCard(
+                onClick = { onOpenRooms?.invoke() },
+                enabled = onOpenRooms != null,
+            )
+
             Spacer(Modifier.height(14.dp))
             // Настройки и «О программе» — две отдельные кнопки в одном месте.
             // Раньше тему и напоминания приходилось искать внутри «О программе»,
@@ -239,6 +253,57 @@ private fun RoleCard(role: Role, selected: Boolean, onClick: () -> Unit) {
             }
             Text(
                 if (selected) "\u2713" else "\u203a",
+                fontSize = 22.sp,
+                color = MIET_BLUE,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+/**
+ * Карточка «Аудитории» в главном меню.
+ *
+ * Отдельный composable, а не переиспользование [GameCard]: подписи и иконки
+ * у них разные, а общее у карточек только устройство. Сделано копированием
+ * намеренно — играть с общим параметром ради одного экрана неоправданно.
+ */
+@Composable
+private fun RoomsCard(onClick: () -> Unit, enabled: Boolean) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Filled.Apartment,
+                contentDescription = null,
+                tint = MIET_BLUE,
+                modifier = Modifier.size(30.dp)
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Аудитории",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "Свободные сейчас по корпусам",
+                    fontSize = 12.sp,
+                    color = LocalAppColors.current.muted
+                )
+            }
+            Text(
+                "\u203a",
                 fontSize = 22.sp,
                 color = MIET_BLUE,
                 fontWeight = FontWeight.Bold
