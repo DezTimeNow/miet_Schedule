@@ -633,8 +633,14 @@ class ChipTopTest {
         )
         // Очки и место живут в разных состояниях: иначе надпись дёргалась бы
         // на каждый тап вместе со счётом.
-        assertTrue(game.contains("var score by remember { mutableIntStateOf(0) }"))
-        assertTrue(game.contains("var rank by remember { mutableIntStateOf(0) }"))
+        assertTrue(
+            Regex("""var score by (remember|rememberSaveable) \{ mutableIntStateOf\(0\) \}""")
+                .containsMatchIn(game)
+        )
+        assertTrue(
+            Regex("""var rank by (remember|rememberSaveable) \{ mutableIntStateOf\(0\) \}""")
+                .containsMatchIn(game)
+        )
     }
 
     /**
@@ -1056,7 +1062,15 @@ class ChipTopTest {
         // Место не должно прыгать вместе с очками: состояние отдельное.
         assertTrue(
             "место должно жить в отдельном состоянии",
-            game.contains("var rank by remember { mutableIntStateOf(0) }")
+            game.contains("var rank by ") &&
+                Regex("""var rank by (remember|rememberSaveable) \{ mutableIntStateOf\(0\) \}""")
+                    .containsMatchIn(game)
+        )
+        // Поворот экрана пересоздаёт Activity: обычный remember обнулял и
+        // место, и очки. Игрок, набравший 6 очков, после поворота видел 0.
+        assertTrue(
+            "место должно переживать поворот экрана",
+            game.contains("var rank by rememberSaveable {")
         )
     }
 
@@ -1202,11 +1216,29 @@ class ChipTopTest {
         // База, от которой растёт счётчик, и она отдельна от результата.
         assertTrue(
             "нужна отдельная база счёта",
-            game.contains("var baseScore by remember { mutableIntStateOf(0) }")
+            game.contains("var baseScore by ") &&
+                Regex("""var baseScore by (remember|rememberSaveable) \{ mutableIntStateOf\(0\) \}""")
+                    .containsMatchIn(game)
         )
         assertTrue(
             "база не должна совпадать с результатом",
-            game.contains("var score by remember { mutableIntStateOf(0) }")
+            Regex("""var score by (remember|rememberSaveable) \{ mutableIntStateOf\(0\) \}""")
+                .containsMatchIn(game)
+        )
+        // Поворот экрана пересоздаёт Activity. Обычный remember терял и
+        // результат, и базу, а эффект видел пустую baseForNick, считал
+        // это сменой ника и ставил счёт в строку топа — то есть в ноль.
+        assertTrue(
+            "счёт должен переживать поворот экрана",
+            game.contains("var score by rememberSaveable {")
+        )
+        assertTrue(
+            "база должна переживать поворот экрана",
+            game.contains("var baseScore by rememberSaveable {")
+        )
+        assertTrue(
+            "признак «база для этого ника» должен переживать поворот",
+            game.contains("var baseForNick by rememberSaveable {")
         )
 
         // Старт с уже набранного: своя строка в топе поднимает базу.

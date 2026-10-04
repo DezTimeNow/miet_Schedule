@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -113,7 +114,11 @@ fun TapChipScreen(onBack: () -> Unit) {
     var nickDraft by remember { mutableStateOf(nick) }
 
     // ── игра ─────────────────────────────────────────────────────────
-    var score by remember { mutableIntStateOf(0) }
+    // rememberSaveable, а не remember: поворот экрана пересоздаёт Activity,
+    // и обычный remember обнулял счёт. Набранные очки исчезали, а вместе с
+    // ними и база — эффект видел пустую baseForNick, считал это сменой
+    // ника и ставил счёт в строку топа.
+    var score by rememberSaveable { mutableIntStateOf(0) }
     var lastTapAt by remember { mutableStateOf(0L) }
 
     // База, от которой растёт локальный счётчик.
@@ -125,7 +130,7 @@ fun TapChipScreen(onBack: () -> Unit) {
     //
     // Хранится отдельно от score: это точка отсчёта, а не результат, и
     // смешивать их нельзя — иначе база росла бы вместе с тапами.
-    var baseScore by remember { mutableIntStateOf(0) }
+    var baseScore by rememberSaveable { mutableIntStateOf(0) }
 
     // Для какого ника база выставлена. Без этого признака нельзя отличить
     // «сменили ник» от «обновился топ»: оба события приходят в один и тот же
@@ -133,7 +138,7 @@ fun TapChipScreen(onBack: () -> Unit) {
     // ВЫСТАВИТЬ (в том числе вниз — новый ник мог иметь меньший счёт), а при
     // обновлении топа — только поднять, иначе чужой результат обнулял бы
     // счётчик посреди игры.
-    var baseForNick by remember { mutableStateOf("") }
+    var baseForNick by rememberSaveable { mutableStateOf("") }
 
     // Место в рейтинге. Приходит из ответа скрипта: тот всё равно читает
     // таблицу целиком, чтобы разобрать позицию, и отдать её в том же ответе
@@ -142,7 +147,7 @@ fun TapChipScreen(onBack: () -> Unit) {
     // Хранится отдельно от score: очки меняются каждый тап, а место — раз
     // в SYNC_INTERVAL_MS. Смешивать их в одном состоянии нельзя, иначе
     // надпись прыгала бы на каждый тап.
-    var rank by remember { mutableIntStateOf(0) }
+    var rank by rememberSaveable { mutableIntStateOf(0) }
 
     // Отказ таблицы. Счётчик при этом продолжал расти на экране, а в
     // таблицу не попадало ничего: результат выглядел настоящим и пропадал
