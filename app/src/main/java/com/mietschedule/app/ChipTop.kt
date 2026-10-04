@@ -47,7 +47,7 @@ object ChipTop {
      * ровно то же, что умеет приложение.
      */
     private const val ENDPOINT =
-        "https://script.google.com/macros/s/AKfycbz2Jd_tBNTyyn9r6zX4xJtN6-jishuNiZ2kXwjekWJPVkEyRJq52mX5i9-oUg3fmbRb/exec"
+        "https://script.google.com/macros/s/AKfycbxC02arwREotzw9H_yclIMQG-ynW5Bcl4g2A2TYHy5uHzVPJJYzf7kNol4zU_UxDE3g/exec"
 
     /** Ник длиннее этого скрипт не принимает. */
     const val NICK_MAX = 30
