@@ -23,6 +23,7 @@ import java.util.Calendar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.lifecycleScope
 
 internal val MIET_BLUE = Color(0xFF0057B8)
 
@@ -88,6 +89,21 @@ internal fun dayIndexFromCalendar(dayOfWeek: Int): Int = (dayOfWeek + 5) % 7
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Аналитика и счётчик установок уходят в фоновый поток.
+        //
+        // AppMetrica.activate на главном потоке растягивал старт до 5 секунд:
+        // SDK проверяет и загружает классы, и окно не получало фокус —
+        // система фиксировала ANR «Waited 5021ms for FocusEvent». Это
+        // повторялось на каждом запуске, а не как случайность. Отдельный
+        // поток снимает задержку целиком; обе функции гасят свои ошибки
+        // внутри и на работу приложения не влияют.
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                Analytics.start(this@MainActivity)
+                InstallCounter.reportRun(this@MainActivity, BuildConfig.VERSION_CODE)
+            }
+        }
 
         // Выбор темы живёт здесь, а не в AppRoot: его должен менять экран
         // «О программе», а тот лежит внутри AppRoot. Передаём лямбду.

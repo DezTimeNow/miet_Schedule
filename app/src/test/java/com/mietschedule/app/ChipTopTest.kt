@@ -696,4 +696,134 @@ class ChipTopTest {
         )
     }
 
+    /**
+     * Счётчик установок ходит на адрес скрипта, который ведёт лист Installs.
+     *
+     * Требование владельца: считать установки при установке из ссылки, а не
+     * из магазина. Appmetrica для этого не годится — она приписывает
+     * установку магазину через install referrer, которого при ручной
+     * установке нет. Тест держит адрес и формат параметров, чтобы смена
+     * скрипта не осталась незамеченной.
+     */
+    @Test
+    fun `счётчик установок обращается к скрипту с таблицей Installs`() {
+        val counter = srcFile("InstallCounter.kt")
+
+        assertTrue(
+            "Счётчик должен использовать актуальный адрес скрипта",
+            counter.contains("AKfycbwBy-_5ev4yVs9Fqg9MTRvkLaSnWK1RDqrlICaTsQggAsEm1mojVCAFi8uqDvHpjtkx"),
+        )
+        assertTrue(
+            "Устройство передаётся ключом device — так его ждёт скрипт",
+            counter.contains("addQueryParameter(\"device\""),
+        )
+        assertTrue(
+            "Версия передаётся отдельным параметром: по ней виден состав версий",
+            counter.contains("addQueryParameter(\"version\""),
+        )
+        assertTrue(
+            "Модель телефона нужна для разбивки по устройствам",
+            counter.contains("addQueryParameter(\"model\""),
+        )
+    }
+
+    /**
+     * Идентификатор устройства хранится, а не создаётся заново при запуске.
+     *
+     * Иначе каждое открытие приложения считалось бы новой установкой, и
+     * цифра «сколько человек поставило» совпала бы с числом запусков.
+     */
+    @Test
+    fun `идентификатор устройства не пересоздаётся при запуске`() {
+        val counter = srcFile("InstallCounter.kt")
+
+        assertTrue(
+            "Идентификатор обязан лежать в SharedPreferences",
+            counter.contains("getSharedPreferences(PREFS"),
+        )
+        assertTrue(
+            "Существующий идентификатор переиспользуется",
+            counter.contains("prefs.getString(KEY_DEVICE, null)?.let { return it }"),
+        )
+        assertFalse(
+            "Идентификатор не должен совпадать с рекламным: он переживает сброс",
+            counter.contains("AdvertisingIdClient"),
+        )
+    }
+
+    /**
+     * Повторный запуск не превращается в новую установку.
+     *
+     * Требование владельца — отличать «поставил» от «заходил». Отправка не
+     * чаще раза в сутки и обязана быть связана с первой отправкой, иначе
+     * лист Installs наполнится одинаковыми строками.
+     */
+    @Test
+    fun `повторные запуски не засчитываются как новые установки`() {
+        val counter = srcFile("InstallCounter.kt")
+
+        assertTrue(
+            "Отправка не чаще раза в сутки",
+            counter.contains("REPORT_INTERVAL_MS"),
+        )
+        assertTrue(
+            "Первая отправка должна помечаться отдельно от повторной",
+            counter.contains("if (last == 0L) \"true\" else \"false\""),
+        )
+        assertTrue(
+            "Отметка об отправке ставится до запроса: при обрыве связи иначе",
+            counter.contains("prefs.edit().putLong(KEY_REPORTED, now).apply()"),
+        )
+    }
+
+    /**
+     * Счётчик не блокирует запуск приложения.
+     *
+     * Запрос сетевой и синхронный. Если сделать его на главном потоке,
+     * старт приложения растянется на секунды — на медленных телефонах это
+     * ANR, что уже случалось в проекте.
+     */
+    @Test
+    fun `отправка счётчика не блокирует главный поток`() {
+        val main = srcFile("MainActivity.kt")
+        assertTrue(
+            "Отправка должна уйти с главного потока",
+            main.contains("withContext(Dispatchers.IO)") &&
+                main.contains("InstallCounter.reportRun"),
+        )
+        assertTrue(
+            "Analytics тоже запускается на старте",
+            main.contains("Analytics.start(this@MainActivity)"),
+        )
+        // AppMetrica.activate на главном потоке давал ANR на старте:
+        // «Waited 5021ms for FocusEvent». Поэтому оба вызова обязаны
+        // быть внутри withContext(Dispatchers.IO).
+        val ioBlock = Regex(
+            """withContext\(Dispatchers\.IO\) \{[^}]*Analytics\.start""",
+        ).containsMatchIn(main)
+        assertTrue(
+            "Appmetrica не должна активироваться на главном потоке — это ANR",
+            ioBlock,
+        )
+    }
+
+    /**
+     * Аналитика не должна ронять приложение.
+     *
+     * И Appmetrica, и собственный счётчик ходят в сеть. Отказ любого из
+     * них не должен мешать расписанию — весь вызов обёрнут в try-catch.
+     */
+    @Test
+    fun `аналитика не роняет приложение при отказе сети`() {
+        val analytics = srcFile("Analytics.kt")
+        assertTrue(
+            "Ошибка аналитики должна гаситься",
+            analytics.contains("catch (t: Throwable)"),
+        )
+        assertFalse(
+            "Appmetrica не должен вызываться напрямую из игрового экрана",
+            srcFile("TapChipScreen.kt").contains("AppMetrica.activate"),
+        )
+    }
+
 }

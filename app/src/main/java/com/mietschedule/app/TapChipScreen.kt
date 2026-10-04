@@ -294,6 +294,8 @@ fun TapChipScreen(onBack: () -> Unit) {
                                             }
                                             lastTapAt = now
                                             score += 1
+                                            // Аналитика: засчитанный тап.
+                                            Analytics.reportScore(score)
                                             // Вспышка при тапе: 1 → 0 за 380 мс.
                                             // animatable-функции suspend, а
                                             // onTap — обычный обработчик, поэтому

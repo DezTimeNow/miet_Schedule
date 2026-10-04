@@ -21,11 +21,11 @@ android {
         // Соглашение о номерах: сборка N соответствует релизу 0.N. Номер
         // после точки в теге GitHub обязан совпадать с versionCode, иначе
         // UpdateChecker перестаёт видеть обновления.
-        versionCode = 45
+        versionCode = 46
         // Пользователю показываем семантическую строку: пре-релиз помечен
         // суффиксом -alpha, как это делают в сторах. «О программе» выводит
         // её вместе с номером сборки.
-        versionName = "0.45.0-alpha"
+        versionName = "0.46.0-alpha"
     }
 
     buildTypes {
@@ -61,6 +61,11 @@ android {
 }
 
 dependencies {
+    // Аналитика Appmetrica: считает установки (через install referrer),
+    // активных пользователей и события. Без Google Play Services.
+    implementation("io.appmetrica.analytics:analytics:8.6.0")
+
+
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
