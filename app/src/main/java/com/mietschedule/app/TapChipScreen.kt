@@ -58,6 +58,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.graphicsLayer
+import com.mietschedule.app.R
 
 /**
  * Мини-игра «Тапай микросхему» и таблица игроков.
@@ -242,23 +247,6 @@ fun TapChipScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(10.dp))
 
                     // ── микросхема ────────────────────────────────────
-                    // Цвета читаются обычными val: обращаться к
-                    // LocalAppColors.current и MaterialTheme внутри
-                    // remember нельзя — это @Composable-вызовы.
-                    val bodyTop = LocalAppColors.current.chipBody
-                    val bodyDeep = LocalAppColors.current.chipBodyDeep
-                    val pinCol = LocalAppColors.current.chipPin
-                    val silk = MaterialTheme.colorScheme.onSurface
-                    val art = remember(bodyTop, bodyDeep, pinCol, silk) {
-                        ChipArt(
-                            measurer = measurer,
-                            bodyTop = bodyTop,
-                            bodyBottom = bodyDeep,
-                            pinColor = pinCol,
-                            silkscreen = silk,
-                            highlight = MIET_BLUE,
-                        )
-                    }
                     val glow = pulse.value
                     val pressAmt = press.value
                     val tapScore = score
@@ -268,7 +256,25 @@ fun TapChipScreen(onBack: () -> Unit) {
                             .fillMaxWidth()
                             .aspectRatio(1.12f)
                     ) {
-                        Canvas(
+                        // Картинка микросхемы — векторный ресурс, поэтому
+                        // масштабируется без потерь на любом экране. Нажатия
+                        // обрабатываются на этом же Box, а не на картинке:
+                        // так область тапа не зависит от того, как именно
+                        // лягут градиенты.
+                        // Отклик на нажатие — только затемнение. Масштаб здесь
+                        // недопустим: первая версия анимировала размер элемента
+                        // через graphicsLayer, и «Топ игроков» подпрыгивал
+                        // вместе с микросхемой, то есть дёргалась вёрстка.
+                        val chipModifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = 1f - pressAmt * 0.08f }
+                        Image(
+                            painter = painterResource(R.drawable.ic_miet_chip),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = chipModifier,
+                        )
+                        Box(
                             Modifier
                                 .fillMaxSize()
                                 .pointerInput(Unit) {
@@ -301,18 +307,7 @@ fun TapChipScreen(onBack: () -> Unit) {
                                         },
                                     )
                                 }
-                        ) {
-                            // art.draw — расширение DrawScope, поэтому
-                            // приёмник должен быть видим как such.
-                            with(art) {
-                                draw(
-                                    glow = glow,
-                                    pulse = glow,
-                                    press = pressAmt,
-                                    chipLabel = ChipArt.CHIP_LABEL,
-                                )
-                            }
-                        }
+                        )
                     }
 
                     Spacer(Modifier.height(10.dp))

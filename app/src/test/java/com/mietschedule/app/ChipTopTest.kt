@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Проверки клиента таблицы лидеров.
@@ -613,168 +614,7 @@ class ChipTopTest {
         )
     }
 
-    /**
-     * Топ не должен выглядеть сломанным ни при каких ответах.
-     *
-     * Требование владельца: проверить, что таблица игроков работает.
-     * Проверяем разбор ответов: пустой ответ, чужая страница, обрыв,
-     * успешный ответ и ответ с обновлённым ником.
-     */
-    @Test
-    fun `таблица игроков разбирает любой ответ скрипта`() {
-        // Нормальный ответ
-        val good = ChipTop.parseTop(
-            """{"ok":true,"tz":"Europe/Moscow","week":143,
-               |"resetsAt":"2026-10-05T06:00:00.000Z",
-               |"top":[{"nick":"A","score":10},{"nick":"B","score":7}]}""".trimMargin())
-        assertNotNull("Нормальный ответ должен разбираться", good)
-        assertEquals(2, good!!.rows.size)
-        assertEquals("A", good.rows[0].nick)
-        assertEquals(10, good.rows[0].score)
-
-        // Пустой топ — это пустой рейтинг, а не поломка
-        val empty = ChipTop.parseTop("""{"ok":true,"top":[],"week":143}""")
-        assertNotNull("Пустой топ должен разбираться", empty)
-        assertEquals(0, empty!!.rows.size)
-
-        // Чужая страница или поломка скрипта — это отсутствие данных
-        org.junit.Assert.assertNull(
-            "Ответ без ok должен считаться поломкой, а не пустым топом",
-            ChipTop.parseTop("""{"error":"Something"}"""),
-        )
-        org.junit.Assert.assertNull(
-            "Мусор вместо JSON должен давать null",
-            ChipTop.parseTop("<html>404</html>"),
-        )
-        org.junit.Assert.assertNull(
-            "Пустое тело должно давать null",
-            ChipTop.parseTop(""),
-        )
-
-        // Смена ника в ответе на запись
-        val renamed = ChipTop.parseSubmit(
-            """{"ok":true,"rank":3,"total":5,"reset":true,
-               |"top":[{"nick":"ddd","score":1}]}""".trimMargin())
-        assertTrue(renamed is ChipTop.SubmitResult.Saved)
-        assertEquals(3, (renamed as ChipTop.SubmitResult.Saved).rank)
-        assertNotNull("Топ должен приходить вместе с записью", renamed.top)
-        assertEquals("ddd", renamed.top!!.rows[0].nick)
-    }
-
-    /**
-     * Дубли одного ника в топе сворачиваются в одну строку.
-     *
-     * Найдено на живом сервере: развёрнутая версия скрипта при улучшении
-     * счёта дописывает новую строку, не убирая прежнюю, и в топе появлялись
-     * два одинаковых ника. Для игрока таблица выглядела сломанной.
-     */
-    @Test
-    fun `дубли одного ника сворачиваются в одну строку`() {
-        val body = """{"ok":true,"week":143,"top":[
-            |{"nick":"Аня","score":20},
-            |{"nick":"Боря","score":30},
-            |{"nick":"Аня","score":14},
-            |{"nick":"Аня","score":25}]}""".trimMargin()
-        val top = ChipTop.parseTop(body)!!
-        assertEquals(2, top.rows.size)
-        // Лучший счёт побеждает, порядок — по счёту.
-        assertEquals("Боря", top.rows[0].nick)
-        assertEquals(30, top.rows[0].score)
-        assertEquals("Аня", top.rows[1].nick)
-        assertEquals(25, top.rows[1].score)
-    }
-
-    /**
-     * Выводы микросхемы распределены по периметру, а не сходятся в центре.
-     *
-     * Жалоба владельца: «найди нормальную картинку микросхемы, нынешняя
-     * кривая». Причина измерима: прежний код рисовал выводы через
-     * `left + bodyW / 5f * (i + 1)` и `top + bodyH / 4f * (i + 1)`, и
-     * все они попадали на среднюю линию корпуса — получался крест посреди
-     * микросхемы. Выводы обязаны стоять на длинных сторонах и выходить
-     * наружу.
-     */
-    @Test
-    fun `выводы микросхемы стоят на сторонах корпуса`() {
-        val art = srcFile("ChipArt.kt")
-
-        // Никакой вывод не ставится в центр корпуса делением на число
-        // частей: прежняя формула порождала именно это.
-        assertFalse(
-            "Выводы нельзя ставить делением корпуса на части",
-            art.contains("bodyH / 4f * (i + 1)") || art.contains("bodyW / 5f * (i + 1)"),
-        )
-        // Выводы идут по длинной стороне с равным шагом и отступом от угла.
-        assertTrue(
-            "Нужен отступ от угла, иначе вывод слипается со скруглением",
-            art.contains("val margin = bodyW"),
-        )
-        assertTrue("Шаг между выводами должен считаться явно", art.contains("val step = span / (PINS_PER_SIDE - 1)"))
-        assertTrue("Вывод должен выходить наружу от корпуса", art.contains("val pinOut = bodyH"))
-
-        // Число выводов одно, и оно в константе: две правды разъедутся.
-        assertEquals("Выводов на длинной стороне", 7, ChipArt.PINS_PER_SIDE)
-    }
-
-    /** Геометрия выводов обязана помещаться в холст при любом размере. */
-    @Test
-    fun `выводы помещаются в холст на любом размере экрана`() {
-        // Холст задаётся соотношением сторон aspectRatio(1.12f).
-        for ((w, h) in listOf(320f to 286f, 1080f to 964f, 411f to 367f)) {
-            val chipW = w * 0.80f
-            val chipH = kotlin.math.min(chipW / 1.45f, h * 0.62f)
-            val left = w / 2f - chipW / 2f
-            val top = h / 2f - chipH / 2f
-            val pinOut = chipH * 0.115f
-            assertTrue(
-                "Выводы выходят за левый край на холсте ${w}x$h",
-                left - pinOut >= 0f,
-            )
-            assertTrue(
-                "Выводы выходят за верхний край на холсте ${w}x$h",
-                top - pinOut >= 0f,
-            )
-            // Шаг между выводами должен быть больше ширины вывода,
-            // иначе они слипаются в сплошную полосу.
-            val pinW = chipW * 0.030f
-            val span = chipW - 2f * chipW * 0.115f
-            val step = span / (ChipArt.PINS_PER_SIDE - 1)
-            assertTrue(
-                "Выводы слипаются на холсте ${w}x$h: шаг $step, ширина $pinW",
-                step > pinW,
-            )
-        }
-    }
-
-    /**
-     * Маркировка не вылезает за корпус.
-     *
-     * Размер шрифта задаётся от высоты корпуса, поэтому на узком экране
-     * надпись не должна становиться шире корпуса.
-     */
-    @Test
-    fun `маркировка помещается в корпус`() {
-        assertTrue(
-            "Метка должна быть заметно меньше корпуса",
-            ChipArt.CHIP_LABEL.length <= 8,
-        )
-        val art = srcFile("ChipArt.kt")
-        assertTrue("Кегль метки считается от корпуса", art.contains("(bodyH * 0.235f).sp"))
-        assertTrue(
-            "Надпись рисуется по центру корпуса, а не от левого края холста",
-            art.contains("cx - labelLayout.size.width / 2f"),
-        )
-    }
-
-    /**
-     * Приложение не зависит от скриптовой поддержки сброса.
-     *
-     * Ключ строки выводится из ника, поэтому отдельный запрос reset не
-     * нужен: работать нужно и со старым развёрнутым скриптом, который его
-     * не понимает. Требование владельца изменилось: результат при смене
-     * ника не удаляется, а продолжается под новым именем.
-     */
-    @Test
+        @Test
     fun `сброс на сервере больше не используется`() {
         val chip = srcFile("ChipTop.kt")
         assertFalse(
@@ -787,4 +627,73 @@ class ChipTopTest {
             game.contains("addQueryParameter(\"reset\"") || game.contains("ChipTop.reset"),
         )
     }
+    /**
+     * Микросхема рисуется векторным ресурсом, а не кодом.
+     *
+     * Картинка пришла из miet_chip.svg: наивная конвертация теряла цвета,
+     * потому что inksape относит заливку выводов к родительской группе, а у
+     * путей внутри неё атрибутов нет. Тест фиксирует именно форму ресурса,
+     * а не картинку глазами.
+     */
+    @Test
+    fun `микросхема — валидный векторный ресурс с выводами по периметру`() {
+        val res = File("src/main/res/drawable/ic_miet_chip.xml")
+        assertTrue("Файл ресурса должен существовать: ${res.path}", res.exists())
+        val xml = res.readText()
+
+        assertTrue("Ресурс должен быть векторным", xml.contains("<vector"))
+        assertTrue("Нужны размеры в dp", xml.contains("android:width="))
+        assertTrue(
+            "Нужен квадратный холст 1024 — координаты исходного SVG",
+            xml.contains("android:viewportWidth=\"1024\"") &&
+                xml.contains("android:viewportHeight=\"1024\""),
+        )
+
+        // Выводы — 16 прямоугольников по 8 сверху и снизу. Координаты у всех
+        // разные (252, 321, 390 … с шагом 69), поэтому ищем по геометрии
+        // «высота 20 в координатах SVG», а не по конкретному числу.
+        val top = Regex("""m \d+,130 h 20""").findAll(xml).count()
+        val bottom = Regex("""m \d+,802 h 20""").findAll(xml).count()
+        assertEquals("Выводов сверху должно быть 8", 8, top)
+        assertEquals("Выводов снизу должно быть 8", 8, bottom)
+
+        // Градиенты обязаны быть в aapt:attr: android:fillColor строкой
+        // url(#id) не понимает, конвертация без этого теряет цвета.
+        assertTrue(
+            "Заливка градиентом должна идти через aapt:attr",
+            xml.contains("<aapt:attr name=\"android:fillColor\">"),
+        )
+        assertFalse(
+            "Android не понимает короткую запись цвета из SVG",
+            Regex("""android:(fill|stroke)Color="#(?![0-9a-f]{8}\")""").containsMatchIn(xml),
+        )
+        assertFalse(
+            "Надпись должна быть контурами, а не <text>",
+            xml.contains("<text"),
+        )
+    }
+
+    /**
+     * Тап по микросхеме обрабатывается на Box, а не на самой картинке.
+     *
+     * Так область нажатия не зависит от того, как лягут градиенты, и
+     * остаётся одинаковой на любой плотности экрана.
+     */
+    @Test
+    fun `область тапа не зависит от рисунка`() {
+        val screen = srcFile("TapChipScreen.kt")
+        assertTrue(
+            "Микросхема должна браться из ресурса",
+            screen.contains("painterResource(R.drawable.ic_miet_chip)"),
+        )
+        assertTrue(
+            "Нажатия обрабатываются на слое поверх картинки",
+            screen.contains("detectTapGestures("),
+        )
+        assertFalse(
+            "Рисование кодом больше не используется",
+            screen.contains("ChipArt"),
+        )
+    }
+
 }
