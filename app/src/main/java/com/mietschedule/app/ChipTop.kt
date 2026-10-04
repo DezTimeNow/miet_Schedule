@@ -1,7 +1,6 @@
 package com.mietschedule.app
 
 import android.content.Context
-import android.provider.Settings
 import android.util.Log
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -179,11 +178,17 @@ object ChipTop {
     /**
      * Отправить результат игрока.
      *
-     * [install] — идентификатор установки приложения: скрипт держит в
+     * [playerId] — ключ строки игрока, выведенный из ника: скрипт держит в
      * таблице не больше одной строки на него за неделю, поэтому повторная
      * отправка меньшего счёта игнорируется, а большего заменяет прежний.
+     *
+     * Ключ не привязан к устройству намеренно. Требование владельца:
+     * «при смене ника не надо чистить результат, другой человек может
+     * сделать такой же ник и продолжить под ним» — значит личность игрока
+     * задаёт ник, и каждый ник живёт в своей строке. Смена ника ничего не
+     * обнуляет: результат продолжается под новым именем.
      */
-    suspend fun submit(nick: String, score: Int, install: String): SubmitResult =
+    suspend fun submit(nick: String, score: Int, playerId: String): SubmitResult =
         withContext(Dispatchers.IO) {
             val clean = nick.trim().replace(Regex("\\s+"), " ")
             if (clean.isEmpty()) return@withContext SubmitResult.Rejected("Ник не может быть пустым")
@@ -196,7 +201,7 @@ object ChipTop {
             val target = url(ENDPOINT).newBuilder()
                 .addQueryParameter("nick", clean)
                 .addQueryParameter("score", score.toString())
-                .addQueryParameter("install", install)
+                .addQueryParameter("install", playerId)
                 .build() ?: return@withContext SubmitResult.NoNetwork
 
             runCatching {
@@ -209,45 +214,6 @@ object ChipTop {
                 }
             }.getOrElse {
                 Log.w(TAG, "Отправка не удалась", it)
-                SubmitResult.NoNetwork
-            }
-        }
-
-    /**
-     * Сбросить результат игрока.
-     *
-     * Вызывается при смене имени: новое имя означает нового игрока, поэтому
-     * старая строка удаляется и счёт начинается с нуля. Раньше при смене
-     * ника отправлялся счёт 0, скрипт его отклонял, а старая строка
-     * оставалась — человек переименовывался, набирал очки и оставался в
-     * таблице под прежним именем, не находя себя.
-     *
-     * Отдельный вызов, а не submit с нулевым счётом: нулевой счёт скрипт
-     * отклоняет по правилам, а здесь нужен именно сброс.
-     */
-    suspend fun reset(nick: String, install: String): SubmitResult =
-        withContext(Dispatchers.IO) {
-            val clean = nick.trim().replace(Regex("\\s+"), " ")
-            if (clean.isEmpty()) return@withContext SubmitResult.Rejected("Ник не может быть пустым")
-            if (clean.length > NICK_MAX) {
-                return@withContext SubmitResult.Rejected("Ник длиннее $NICK_MAX символов")
-            }
-            val target = url(ENDPOINT).newBuilder()
-                .addQueryParameter("nick", clean)
-                .addQueryParameter("reset", "1")
-                .addQueryParameter("install", install)
-                .build() ?: return@withContext SubmitResult.NoNetwork
-
-            runCatching {
-                val request = Request.Builder().url(target).get().build()
-                client.newCall(request).execute().use { resp ->
-                    val body = resp.body?.string().orEmpty()
-                    Log.i(TAG, "Сброс результата: HTTP ${resp.code} ${body.take(200)}")
-                    if (!resp.isSuccessful) return@use SubmitResult.NoNetwork
-                    parseSubmit(body)
-                }
-            }.getOrElse {
-                Log.w(TAG, "Сброс результата не удался", it)
                 SubmitResult.NoNetwork
             }
         }
@@ -269,12 +235,28 @@ object ChipTop {
             val score = e.get("score")?.asInt ?: continue
             list.add(Row(nick, score))
         }
+        // Одна строка на ник, лучший счёт.
+        //
+        // Развёрнутая версия скрипта при улучшении счёта дописывает новую
+        // строку, не убирая прежнюю: в топе появляются два одинаковых ника.
+        // На устройстве это выглядит как поломка таблицы, поэтому дубли
+        // сворачиваются здесь. Порядок по счёту сохраняется: строка с лучшим
+        // счётом стоит там же, где стояла бы она одна.
+        val best = LinkedHashMap<String, Int>(list.size)
+        for (row in list) {
+            val prev = best[row.nick]
+            if (prev == null || row.score > prev) best[row.nick] = row.score
+        }
+        val merged = best.entries
+            .sortedByDescending { it.value }
+            .map { Row(it.key, it.value) }
+
         val resets = obj.get("resetsAt")?.asString
         val resetsAt = runCatching {
             java.time.Instant.parse(resets).toEpochMilli()
         }.getOrElse { 0L }
         return Top(
-            rows = list,
+            rows = merged,
             resetsAtMillis = resetsAt,
             tz = obj.get("tz")?.asString.orEmpty(),
             week = obj.get("week")?.asInt ?: 0,
@@ -291,7 +273,7 @@ object ChipTop {
         if (!obj.get("ok").asBoolean) {
             return SubmitResult.Rejected(when (obj.get("error")?.asString) {
                 "nick" -> "Такой ник не принимается"
-                "install" -> "Не удалось определить устройство"
+                "install" -> "Не удалось определить игрока"
                 "score" -> "Счёт отклонён таблицей"
                 else -> "Таблица отклонила результат"
             })
@@ -309,23 +291,26 @@ object ChipTop {
         ?: error("Адрес скрипта повреждён")
 
     /**
-     * Идентификатор установки.
+     * Ключ строки игрока в таблице.
      *
-     * Берётся [Settings.Secure.ANDROID_ID]: он переживает переустановку
-     * поверх обновления и не требует ни одного разрешения. Он не является
-     * идентификатором человека — таблица публична и читается без
-     * авторизации, поэтому спрятать его нечем, да и незачем.
+     * Ключ выводится из ника, а не берётся с устройства. Причина конкретная:
+     * скрипт держит одну строку на ключ и не переписывает её, если присланный
+     * счёт не больше прежнего. При ключе с устройства игрок, чья строка уже
+     * занята чужим результатом, физически не мог попасть в таблицу: отправлял
+     * (ник, 13) — скрипт отвечал dup и оставлял прежний ник. Воспроизведено
+     * на живом сервере, игрок в таблице не появлялся ни под одним ником.
+     *
+     * Теперь требование владельца: «при смене ника не надо чистить результат,
+     * другой человек может сделать такой же ник и продолжить под ним».
+     * Значит личность игрока — это ник, и каждый ник получает свою строку.
+     *
+     * Смена ника ничего не чистит и не обнуляет: результат продолжается под
+     * новым именем, как и просил владелец.
      */
-    fun installId(ctx: Context): String = runCatching {
-        Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ANDROID_ID)
-    }.getOrNull()?.filter { it.isLetterOrDigit() }?.take(40).orEmpty().ifEmpty {
-        // На некоторых прошивках ANDROID_ID недоступен. Подставляем случайный
-        // идентификатор: он не переживёт переустановку, но и позволит
-        // приложению работать, а не отказывать в игре.
-        val prefs = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.getString("install", null) ?: java.util.UUID.randomUUID().toString()
-            .replace("-", "").take(40).also {
-                prefs.edit().putString("install", it).apply()
-            }
+    fun playerId(nick: String): String {
+        val clean = nick.trim().replace(Regex("\\s+"), " ").lowercase()
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(clean.toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }.take(40)
     }
 }

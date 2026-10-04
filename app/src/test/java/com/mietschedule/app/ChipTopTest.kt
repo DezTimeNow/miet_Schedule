@@ -481,33 +481,64 @@ class ChipTopTest {
     }
 
     /**
-     * Смена ника сбрасывает результат.
+     * Смена ника не обнуляет результат.
      *
-     * Требование владельца: переименование = новый игрок, счёт с нуля.
-     * Раньше отправлялся счёт 0, скрипт его отклонял, старая строка
-     * оставалась, и человек не находил себя в топе.
+     * Требование владельца: «при смене ника не надо чистить результат,
+     * другой человек может сделать такой же ник и продолжить под ним».
+     * Значит личность игрока — это ник, а не устройство.
      */
     @Test
-    fun `смена ника обнуляет счёт и удаляет строку`() {
+    fun `смена ника не обнуляет результат`() {
         val game = srcFile("TapChipScreen.kt")
-        assertTrue(
-            "При смене ника должен вызываться сброс на сервере",
-            game.contains("ChipTop.reset(value"),
-        )
-        assertTrue(
-            "Локальный счёт должен обнуляться",
+        assertFalse(
+            "При смене ника счёт обнуляться не должен",
             game.contains("score = 0"),
         )
-        assertTrue(
-            "Прежний результат не должен уходить в таблицу",
-            game.contains("lastTapAt = 0L"),
+        assertFalse(
+            "Сброс строки в таблице больше не отправляется",
+            game.contains("ChipTop.reset"),
         )
 
         val chip = srcFile("ChipTop.kt")
-        assertTrue("В клиенте должен быть отдельный метод сброса", chip.contains("suspend fun reset("))
-        assertTrue(
-            "Сброс не должен идти как обычная отправка счёта",
+        assertFalse("Метод сброса удалён", chip.contains("suspend fun reset("))
+        assertFalse(
+            "Удалять строку по reset=1 больше нельзя",
             chip.contains("addQueryParameter(\"reset\", \"1\")"),
+        )
+    }
+
+    /**
+     * Ключ строки игрока выводится из ника, а не берётся с устройства.
+     *
+     * Это и есть причина, по которой игрок не попадал в таблицу: строка
+     * установки была занята чужим результатом, скрипт отвечал dup и не давал
+     * переписать ник. При ключе из ника у каждого ника своя строка.
+     */
+    @Test
+    fun `ключ игрока выводится из ника`() {
+        val chip = srcFile("ChipTop.kt")
+        assertTrue("Ключ строки должен вычисляться из ника", chip.contains("fun playerId(nick: String)"))
+        assertFalse(
+            "Идентификатор устройства больше не используется",
+            chip.contains("fun installId(") || chip.contains("ANDROID_ID"),
+        )
+
+        val game = srcFile("TapChipScreen.kt")
+        assertTrue(
+            "Отправка должна идти с ключом из ника",
+            game.contains("ChipTop.submit(name, current, ChipTop.playerId(name))"),
+        )
+
+        // Один и тот же ник с разных устройств — одна строка.
+        assertEquals(ChipTop.playerId("Аня"), ChipTop.playerId("Аня"))
+        assertEquals(
+            "Регистр и лишние пробелы не должны заводить вторую строку",
+            ChipTop.playerId("  аня  "),
+            ChipTop.playerId("Аня"),
+        )
+        assertTrue(
+            "Разные ники должны давать разные ключи",
+            ChipTop.playerId("Аня") != ChipTop.playerId("Боря"),
         )
     }
 
@@ -582,24 +613,47 @@ class ChipTopTest {
     }
 
     /**
-     * Скрипт умеет сбрасывать строку по запросу reset=1.
+     * Дубли одного ника в топе сворачиваются в одну строку.
      *
-     * Проверяется файл скрипта: он загружается владельцем вручную и не
-     * лежит в репозитории, поэтому проверка выполняется на локальной копии,
-     * если она есть, и пропускается молча при её отсутствии.
+     * Найдено на живом сервере: развёрнутая версия скрипта при улучшении
+     * счёта дописывает новую строку, не убирая прежнюю, и в топе появлялись
+     * два одинаковых ника. Для игрока таблица выглядела сломанной.
      */
     @Test
-    fun `скрипт умеет сбрасывать строку`() {
-        val f = java.io.File("/tmp/topleaderboard.gs")
-        if (!f.exists()) return
-        val script = f.readText()
-        assertTrue(
-            "Скрипт должен принимать параметр reset",
-            script.contains("input.reset !== undefined"),
+    fun `дубли одного ника сворачиваются в одну строку`() {
+        val body = """{"ok":true,"week":143,"top":[
+            |{"nick":"Аня","score":20},
+            |{"nick":"Боря","score":30},
+            |{"nick":"Аня","score":14},
+            |{"nick":"Аня","score":25}]}""".trimMargin()
+        val top = ChipTop.parseTop(body)!!
+        assertEquals(2, top.rows.size)
+        // Лучший счёт побеждает, порядок — по счёту.
+        assertEquals("Боря", top.rows[0].nick)
+        assertEquals(30, top.rows[0].score)
+        assertEquals("Аня", top.rows[1].nick)
+        assertEquals(25, top.rows[1].score)
+    }
+
+    /**
+     * Приложение не зависит от скриптовой поддержки сброса.
+     *
+     * Ключ строки выводится из ника, поэтому отдельный запрос reset не
+     * нужен: работать нужно и со старым развёрнутым скриптом, который его
+     * не понимает. Требование владельца изменилось: результат при смене
+     * ника не удаляется, а продолжается под новым именем.
+     */
+    @Test
+    fun `сброс на сервере больше не используется`() {
+        val chip = srcFile("ChipTop.kt")
+        assertFalse(
+            "Клиент не должен отправлять reset",
+            chip.contains("\"reset\""),
         )
-        assertTrue(
-            "Скрипт должен удалять строку установки при сбросе",
-            script.contains("СБРОС ПРИ СМЕНЕ НИКА"),
+        val game = srcFile("TapChipScreen.kt")
+        assertFalse(
+            "Смена ника не должна удалять строку из таблицы",
+            game.contains("addQueryParameter(\"reset\"") || game.contains("ChipTop.reset"),
         )
     }
 }
