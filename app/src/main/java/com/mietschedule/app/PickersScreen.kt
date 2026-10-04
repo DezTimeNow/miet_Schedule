@@ -20,10 +20,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -40,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +58,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import java.util.Calendar
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -301,6 +307,9 @@ fun AudiencePickerScreen(
     var query by remember { mutableStateOf("") }
     var openBldg by remember { mutableStateOf<String?>(null) }
     var favs by remember { mutableStateOf(prefs.favGroups(Role.AUDIENCE).toSet()) }
+    // Фильтр свободных. showFree — включён ли, pairNo — на какой паре смотрим.
+    var showFree by rememberSaveable { mutableStateOf(false) }
+    var pairNo by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -319,13 +328,18 @@ fun AudiencePickerScreen(
         // Считать есть только что из кэша. Но если пользователь ни разу не открывал
         // расписание группы, кэша расписаний ещё нет — тогда сначала забираем
         // список групп: их 344, один запрос, зато аудитории появятся сразу.
-        val extra = withContext(Dispatchers.IO) {
+        // ОДИН проход по кэшу расписаний: функция отдаёт и список аудиторий, и
+        // сами пары. Раньше занятость считалась вторым разбором того же кэша,
+        // и открытие экрана занимало полминуты вместо нескольких секунд.
+        val (extra, lessons) = withContext(Dispatchers.IO) {
             if (api.cachedSchedule(api.cachedGroups().firstOrNull() ?: "") == null) {
                 api.deriveAudiencesFromGroups(fetchGroupsIfNeeded = true)
             } else {
                 api.deriveAudiencesFromGroups()
             }
         }
+        // Индекс занятости — компактная строка на пару, а не 28 МБ расписаний.
+        if (lessons.isNotEmpty()) api.saveBusyIndex(lessons)
         // Сохраняем локальный список. Без этого код аудитории искался только
         // в /audiences, где 136 аудиторий из 194 нет: аудитории корпуса 8
         // при запуске приложения и при открытии из избранного давали
@@ -372,9 +386,38 @@ fun AudiencePickerScreen(
         loading = false
     }
 
-    val byBldg = remember(list, query) {
+    // Занятые комнаты считаются один раз, а не на каждый элемент списка: иначе
+    // каждая строка спрашивала бы расписание заново при прокрутке.
+    //
+    // Фильтр по DayNumber обязателен. Без него комната считалась занятой из-за
+    // пары, которой сегодня нет: DayNumber 0..3 — это конкретная УЧЕБНАЯ неделя,
+    // и у одной группы в числителе пара в 205, а в знаменателе она же в 310.
+    val todayDay = remember { dayIndexFromCalendar(Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) }
+    val weekRow = remember { runCatching { WeekType.currentRowIndex() }.getOrDefault(0) }
+    // Флаг готовности ИЗ КЭША УДАЛЁН СОЗНАТЕЛЬНО.
+    //
+    // Раньше он ставился в LaunchedEffect после долгого разбора кэша. Эффект
+    // успевал отмениться (Compose пересоздавал composable на list = fromServer),
+    // и флаг навсегда оставался false: индекс лежал на диске целым, а кнопка
+    // «Показать свободные» показывала «Сегодня пар нет» в обычный учебный день.
+    //
+    // Теперь вопрос «есть ли индекс» задаётся напрямую из prefs — он дешёвый
+    // и всегда отвечает на текущее состояние диска, без гонки с загрузкой.
+    val busyKeys = remember(pairNo, showFree, todayDay, weekRow) {
+        if (!showFree) emptySet()
+        else api.busyRoomsCached(todayDay, weekRow, pairNo.toIntOrNull()) ?: emptySet()
+    }
+
+    // В выходной и в дни без пар фильтр «свободные» даёт ВСЕ аудитории. Формально
+    // верно, но человек читает «221 аудитория свободно» как «все комнаты пусты».
+    val noLessonsToday = remember(todayDay, weekRow) {
+        api.busyRoomsCached(todayDay, weekRow, null).isNullOrEmpty()
+    }
+
+    val byBldg = remember(list, query, busyKeys, showFree) {
         val q = query.trim()
         val filtered = list.filter { q.isEmpty() || it.name?.contains(q, ignoreCase = true) == true }
+            .filter { !showFree || roomKey(it.name) !in busyKeys }
         filtered.groupBy { buildingOf(it.name) }
             // Корпуса — по номеру (1, 3, 4, … 8), служебные («ДК МИЭТ», «УВЦ»,
             // «Виртуальные аудитории», «Аудитории практики», «Прочее») — после них.
@@ -401,8 +444,15 @@ fun AudiencePickerScreen(
             // соседей, поэтому кнопка занимает один и тот же слот.
             MietTopBar(
                 title = "Аудитория",
-                subtitle = if (list.isEmpty()) "Загрузка…"
-                else "${list.size} " + plural(list.size, "аудитория", "аудитории", "аудиторий"),
+                subtitle = when {
+                    list.isEmpty() -> "Загрузка…"
+                    showFree && noLessonsToday -> "Сегодня пар нет"
+                    showFree -> {
+                        val free = list.count { roomKey(it.name) !in busyKeys }
+                        "$free свободно"
+                    }
+                    else -> "${list.size} " + plural(list.size, "аудитория", "аудитории", "аудиторий")
+                },
                 onRefresh = onRefresh,
                 onChangeRole = onChangeRole,
                 refreshing = refreshing,
@@ -421,14 +471,85 @@ fun AudiencePickerScreen(
                     modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp)
                 )
             }
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it; openBldg = null },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                placeholder = { Text("Поиск: 8109, 1201 м…", fontSize = 14.sp) },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
+            // Поиск и кнопка «Показать свободные» — в одной строке.
+            //
+            // Кнопка переключатель: нажатие включает фильтр занятости по
+            // выбранной паре, повторное — снимает. Подпись меняется, чтобы было
+            // видно, в каком состоянии список.
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it; openBldg = null },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Поиск: 8109, 1201 м…", fontSize = 14.sp) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                AssistChip(
+                    onClick = { showFree = !showFree },
+                    label = {
+                        Text(
+                            if (showFree) "Показать все" else "Показать свободные",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            if (showFree) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = null,
+                            Modifier.size(16.dp),
+                        )
+                    },
+                )
+            }
+
+            // Фильтр по паре — виден только когда включены свободные.
+            //
+            // Занятость считается по номеру пары, поэтому его надо уметь задать:
+            // в 12:00 и в 15:00 список свободных разный. Пусто — «вся пара недели».
+            if (showFree) {
+                val codes = remember(todayDay, weekRow) {
+                    // Номера пар берём из индекса занятости, а не из кэша
+                    // расписаний: индекс уже на диске и читается мгновенно.
+                    // Code 0 — не настоящая пара (у «Разговоров о важном» слота
+                    // нет, сервер отдаёт нули), в фильтре он только мешал.
+                    api.pairCodesCached(todayDay, weekRow) ?: emptyList()
+                }
+                Row(
+                    Modifier.fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Занято на паре",
+                        fontSize = 12.sp,
+                        color = LocalAppColors.current.muted,
+                        modifier = Modifier.width(96.dp),
+                    )
+                    codes.take(6).forEach { code ->
+                        FilterChip(
+                            modifier = Modifier.padding(end = 6.dp),
+                            selected = pairNo == code.toString(),
+                            onClick = {
+                                pairNo = if (pairNo == code.toString()) "" else code.toString()
+                            },
+                            label = { Text("$code", fontSize = 12.sp) },
+                        )
+                    }
+                    if (codes.size > 6) {
+                        Text(
+                            "…${codes.size}",
+                            fontSize = 11.sp,
+                            color = LocalAppColors.current.muted,
+                        )
+                    }
+                }
+            }
 
             when {
                 error != null -> Box(Modifier.fillMaxSize(), Alignment.Center) {

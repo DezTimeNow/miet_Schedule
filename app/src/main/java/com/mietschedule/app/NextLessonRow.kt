@@ -31,11 +31,16 @@ import java.util.Calendar
 import java.util.Locale
 
 /**
- * Строка «что у меня дальше» над расписанием.
+ * Блок «сейчас и дальше» над расписанием.
  *
- * Смысл: человеку почти всегда нужно одно — ближайшая пара, через сколько
- * и где. Расписание ниже отвечает на вопрос «что у меня вообще», эта строка
- * на вопрос «что сейчас». Вторым вопросом задаются чаще.
+ * Смысл: человеку почти всегда нужны оба ответа сразу — «что сейчас» и «что
+ * дальше». Расписание ниже отвечает на вопрос «что у меня вообще», этот блок
+ * на вопрос «что происходит и что после».
+ *
+ * Две строки вместо одной — требование владельца: со строкой «сейчас»
+ * студент не понимал, что происходит прямо сейчас. Когда пара не идёт,
+ * верхняя строка не показывается вовсе, а не рисуется пустой: пустая плашка
+ * занимала бы место и повторяла то, что расписание ниже уже пишет крупно.
  *
  * Время и предмет приходят одним куском из [NextLessonLogic.Hit]: считать
  * время второй раз, отдельно от выбора пары, нельзя — две копии расчёта
@@ -56,16 +61,32 @@ fun NextLessonRow(
         }
     }
 
-    val hit = remember(lessons, times, now) {
-        NextLessonLogic.next(lessons = lessons, times = times, now = now)
+    val (going, upcoming) = remember(lessons, times, now) {
+        NextLessonLogic.currentAndNext(lessons = lessons, times = times, now = now)
     }
 
-    // Если пар нет — строка не показывается вовсе. Пустая плашка занимала бы
-    // место и повторяла то, что список ниже уже пишет крупно.
-    if (hit == null) return
+    if (going == null && upcoming == null) return
 
+    Column(Modifier.fillMaxWidth()) {
+        if (going != null) {
+            LessonLine(hit = going, going = true, now = now)
+        }
+        if (upcoming != null) {
+            LessonLine(hit = upcoming, going = false, now = now)
+        }
+    }
+}
+
+/**
+ * Одна строка блока.
+ *
+ * @param going идёт ли пара прямо сейчас: от этого и цвет карточки, и слова
+ *   в подписи — «сейчас» вместо часов, потому что при идущей паре время уже
+ *   известно и часами её не описать.
+ */
+@Composable
+private fun LessonLine(hit: NextLessonLogic.Hit, going: Boolean, now: Long) {
     val start = hit.start
-    val going = NextLessonLogic.isGoing(hit, now)
 
     val teacher = hit.lesson.classInfo?.teacherFull?.takeIf { it.isNotBlank() }
     val room = hit.lesson.room?.name?.takeIf { it.isNotBlank() }

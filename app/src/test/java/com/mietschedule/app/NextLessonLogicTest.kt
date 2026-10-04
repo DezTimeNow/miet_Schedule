@@ -280,4 +280,88 @@ class NextLessonLogicTest {
         assertEquals("Корпус 3", NextLessonLogic.buildingOf("3205"))
         assertEquals("Корпус 8", NextLessonLogic.buildingOf("8307"))
     }
+    // ─────────────────────── идущая и следующая одновременно ───────────────────────
+
+    /**
+     * Идущая и следующая видны одновременно.
+     *
+     * Проверка на той ситуации, ради которой функция и писалась: когда идёт
+     * пара, следующая раньше была не видна вовсе, и человек думал, что после
+     * этой пары у него ничего нет.
+     *
+     * withinDays = 0 — намеренно. По умолчанию функция смотрит на 7 дней
+     * вперёд, и пара «1 пара» попадает в результат дважды: сегодня и в
+     * следующий понедельник. Из-за этого «следующая» бралась из будущей
+     * недели, и тесты смотрели не на ту пару.
+     */
+    @Test
+    fun `идущая и следующая видны одновременно`() {
+        val times = listOf(time(1, "08:00", "09:30"), time(2, "09:50", "11:20"), time(3, "12:10", "13:40"))
+        val now = mondayAt(10, 0) // идёт вторая пара
+        val lessons = listOf(lesson(1, 1, "Физика"), lesson(1, 2, "Математика"), lesson(1, 3, "История"))
+        val (going, upcoming) = NextLessonLogic.currentAndNext(lessons, times, now, withinDays = 0)
+        assertEquals("Математика", going?.lesson?.classInfo?.name)
+        assertEquals("История", upcoming?.lesson?.classInfo?.name)
+    }
+
+    /** Без идущей пары следующая всё равно находится — вторая позиция не пустая. */
+    @Test
+    fun `без идущей пары следующая всё равно есть`() {
+        val times = listOf(time(1, "08:00", "09:30"), time(2, "09:50", "11:20"))
+        val now = mondayAt(7, 0)
+        val (going, upcoming) = NextLessonLogic.currentAndNext(
+            listOf(lesson(1, 1, "Физика"), lesson(1, 2, "Математика")), times, now, withinDays = 0
+        )
+        assertNull(going)
+        assertEquals("Физика", upcoming?.lesson?.classInfo?.name)
+    }
+
+    /** Пара не может быть одновременно идущей и следующей. */
+    @Test
+    fun `одна и та же пара не бывает обе`() {
+        val now = mondayAt(8, 30)
+        val (going, upcoming) = NextLessonLogic.currentAndNext(
+            listOf(lesson(1, 1, "Физика")), listOf(time(1, "08:00", "09:30")), now, withinDays = 0
+        )
+        assertNotNull(going)
+        assertNull(upcoming)
+    }
+
+    /** Пустое расписание не выдумывает ни одной пары. */
+    @Test
+    fun `пустое расписание пусто в обеих позициях`() {
+        val (going, upcoming) = NextLessonLogic.currentAndNext(
+            emptyList(), listOf(time(1, "08:00", "09:30")), mondayAt(8, 0)
+        )
+        assertNull(going)
+        assertNull(upcoming)
+    }
+
+    /**
+     * Пересекающиеся пары: идущая кончается ПОЗЖЕ следующей.
+     *
+     * Бывает у преподавателя: две аудитории одновременно, разная длительность.
+     * Если следующая искалась по концу идущей, она молча пропадала бы.
+     */
+    @Test
+    fun `пересекающиеся пары не теряют следующую`() {
+        val times = listOf(time(1, "08:00", "10:00"), time(2, "08:40", "09:30"), time(3, "10:00", "11:30"))
+        val now = mondayAt(9, 0)
+        val lessons = listOf(lesson(1, 1, "Лекция"), lesson(1, 2, "Практика"), lesson(1, 3, "Семинар"))
+        val (going, upcoming) = NextLessonLogic.currentAndNext(lessons, times, now, withinDays = 0)
+        // Идущих две: «Лекция» 08:00–10:00 и «Практика» 08:40–09:30 Берётся более
+        // поздняя по началу — та, что ближе к текущему моменту.
+        assertEquals("Практика", going?.lesson?.classInfo?.name)
+        // Следующая при этом не теряется: порог — «сейчас», а не конец идущей.
+        assertEquals("Семинар", upcoming?.lesson?.classInfo?.name)
+    }
+
+    /** Старая next() не сломалась и отдаёт идущую, как раньше. */
+    @Test
+    fun `старая next отдаёт идущую как и раньше`() {
+        val times = listOf(time(1, "08:00", "09:30"), time(2, "09:50", "11:20"))
+        val now = mondayAt(10, 0)
+        val lessons = listOf(lesson(1, 1, "Физика"), lesson(1, 2, "Математика"))
+        assertEquals("Математика", NextLessonLogic.next(lessons, times, now, withinDays = 0)?.lesson?.classInfo?.name)
+    }
 }

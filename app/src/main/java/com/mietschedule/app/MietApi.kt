@@ -324,15 +324,6 @@ class MietApi(private val context: Context) {
                 .getOrNull() ?: emptyList()
         } ?: emptyList()
 
-    // ───────────────────── Локальный индекс аудиторий ─────────────────────
-    //
-    // Список аудиторий берётся не только из эндпоинта. В расписаниях групп
-    // встречается 194 аудитории, а в эндпоинте лишь 136: ещё 58 есть в паре,
-    // но сервер их поиском не найдёт. Из них 14 — корпус 8 (8102, 8103, 8104,
-    // 8107, 8109, 8110, 8111, 8112, 8208, 8231, 8306, 8307, 8308, 8309),
-    // где /data?audience= отдаёт 0 пар. Для них расписание собирается локально
-    // из кэша групп — см. [localLessonsOf].
-
     // Список аудиторий из кэша расписаний. Без этого ключа поиск кода
     // аудитории при запуске видел только эндпоинт /audiences, а из него
     // 136 аудиторий из 194.
@@ -341,21 +332,34 @@ class MietApi(private val context: Context) {
     private val KEY_AUD_IDX = "audience_index"
     private val KEY_AUD_IDX_TS = "audience_index_ts"
 
-    fun saveAudienceIndex(json: String) {
-        prefs.edit().putString(KEY_AUD_IDX, json)
-            .putLong(KEY_AUD_IDX_TS, System.currentTimeMillis()).apply()
-    }
-
+    /**
+     * Ключ дедупликации пары аудитории — top-level, чтобы юнит-тест не тянул
+     * за собой MietApi (а он требует Context). См. доктринг у одноимённого
+     * [MietApi.localLessonsOf], где ключ и применяется.
+     */
+internal fun roomLessonKey(l: Lesson): String =
+    "${l.day}|${l.dayNumber ?: 0}|${l.time?.code}|" +
+        "${l.classInfo?.code}|${l.classInfo?.name}|${l.group?.name}|" +
+        roomKey(l.room?.name)
 
     /**
-     * Аудитории, которых нет в эндпоинте /audiences, но которые встречаются в паре.
+     * Аудитории из кэша расписаний — и заодно сами пары, одним проходом.
      *
      * Считаются из кэша расписаний групп — если кэша нет, возвращает пустой список
      * и выбор аудитории просто покажет серверные 136.
+     *
+     * Второй элемент пары — ВСЕ пары из этого же прохода. Раньше занятость для
+     * кнопки «Показать свободные» считалась ОТДЕЛЬНЫМ разбором кэша: тот же
+     * файл читался дважды подряд, и открытие экрана аудитории занимало
+     * полминуты вместо нескольких секунд. Теперь данные берутся один раз, а на
+     * диск кладётся только индекс занятости.
      */
-    suspend fun deriveAudiencesFromGroups(fetchGroupsIfNeeded: Boolean = false): List<Audience> {
+    suspend fun deriveAudiencesFromGroups(
+        fetchGroupsIfNeeded: Boolean = false,
+    ): Pair<List<Audience>, List<Lesson>> {
         val gson = GsonHolder.gson
         val out = LinkedHashMap<Int, Audience>()
+        val allLessons = ArrayList<Lesson>()
 
         var cached = cachedGroups()
         if (cached.isEmpty() && fetchGroupsIfNeeded) {
@@ -364,7 +368,7 @@ class MietApi(private val context: Context) {
                 emptyList()
             }
         }
-        if (cached.isEmpty()) return emptyList()
+        if (cached.isEmpty()) return emptyList<Audience>() to emptyList()
 
         // Расписания групп кэшируются только когда пользователь реально открыл
         // расписание. Аудитории нужны уже на экране выбора, поэтому если кэша
@@ -382,6 +386,7 @@ class MietApi(private val context: Context) {
             } catch (e: Exception) {
                 continue
             }
+            allLessons.addAll(data)
             for (l in data) {
                 val room: RoomInfo = l.room ?: continue
                 val code: Int = room.roomCode() ?: continue
@@ -390,7 +395,7 @@ class MietApi(private val context: Context) {
                 if (code !in out) out[code] = Audience(code = code, name = name)
             }
         }
-        return out.values.toList()
+        return out.values.toList() to allLessons
     }
 
     /**
@@ -442,6 +447,101 @@ class MietApi(private val context: Context) {
         prefs.edit()
             .putString(KEY_AUD_LOCAL, GsonHolder.gson.toJson(list.toTypedArray()))
             .apply()
+    }
+
+    /**
+     * Все пары из кэша расписаний — ОДИН проход по диску.
+     *
+     * Отдельная функция, потому что список аудиторий и занятость нужны из
+     * одних и тех же данных. Два прохода по 28 МБ означали двойное время
+     * открытия экрана и вдвое больше работы на телефоне.
+     *
+     * Только чтение диска: сети здесь нет намеренно — кнопка «Показать
+     * свободные» должна работать и без интернета.
+     */
+    suspend fun cachedLessons(): List<Lesson> {
+        val gson = GsonHolder.gson
+        val acc = ArrayList<Lesson>()
+        for (g in cachedGroups()) {
+            val raw = cachedSchedule(g) ?: continue
+            val data = runCatching {
+                gson.fromJson(raw, ScheduleResponse::class.java)?.data
+            }.getOrNull() ?: continue
+            acc.addAll(data)
+        }
+        return acc
+    }
+
+    // ───────────────────── Индекс занятости аудиторий ─────────────────────
+    //
+    // Занятость нужна кнопке «Показать свободные» на экране аудитории, а
+    // считать её из кэша расписаний на КАЖДЫЙ вход нельзя: кэш это 28 МБ и
+    // 343 расписания, и разбор занимал 30–50 секунд — список открывался
+    // полминуты.
+    //
+    // Поэтому в кэш кладётся не всё расписание, а только занятость: строки
+    // «день|учебнаяНеделя|номерПары|комната». На 343 расписания это десятки
+    // килобайт вместо 28 МБ, и чтение мгновенное.
+    private val KEY_BUSY = "room_busy_index"
+
+    /**
+     * Есть ли на диске индекс занятости.
+     *
+     * Отдельная функция, потому что индекс живёт дольше одного экрана: он был
+     * собран при первом открытии расписания, а экран аудиторий может открыться
+     * позже, когда кэш расписаний уже пуст. Проверять «есть ли у меня сейчас
+     * пары» в этом случае бессмысленно — индекс на диске и есть источник правды.
+     */
+    fun busyIndexExists(): Boolean =
+        !prefs.getString(KEY_BUSY, null).isNullOrBlank()
+
+    /** Сохранить занятость. Записи: `день;неделя;код;ключКомнаты`. */
+    fun saveBusyIndex(lessons: List<Lesson>) {
+        if (lessons.isEmpty()) return
+        val lines = lessons.asSequence()
+            .filter { (it.time?.code ?: 0) > 0 }
+            .mapNotNull { l ->
+                val room = l.room?.name?.trim().orEmpty()
+                if (room.isEmpty()) return@mapNotNull null
+                val k = roomKey(room)
+                if (k.isEmpty()) null else "${(l.day ?: 1) - 1};${l.dayNumber ?: 0};${l.time?.code};$k"
+            }
+            .distinct()
+            .toList()
+        prefs.edit().putString(KEY_BUSY, lines.joinToString("\n")).apply()
+    }
+
+    /**
+     * Занятые комнаты по ключу `день;неделя;код` — из кэша, без разбора расписаний.
+     *
+     * @param day индекс дня недели 0..6 (понедельник = 0)
+     * @param weekRow номер учебной недели DayNumber 0..3
+     * @param pairCode номер пары или null — любая пара
+     */
+    fun busyRoomsCached(day: Int, weekRow: Int, pairCode: Int?): Set<String>? {
+        val raw = prefs.getString(KEY_BUSY, null) ?: return null
+        val out = HashSet<String>()
+        for (line in raw.split("\n")) {
+            val p = line.split(';')
+            if (p.size != 4) continue
+            if (p[0] != day.toString() || p[1] != weekRow.toString()) continue
+            if (pairCode != null && p[2] != pairCode.toString()) continue
+            out.add(p[3])
+        }
+        return out
+    }
+
+    /** Номера пар, встречающиеся в этот день на этой учебной неделе. */
+    fun pairCodesCached(day: Int, weekRow: Int): List<Int>? {
+        val raw = prefs.getString(KEY_BUSY, null) ?: return null
+        val out = sortedSetOf<Int>()
+        for (line in raw.split("\n")) {
+            val p = line.split(';')
+            if (p.size != 4) continue
+            if (p[0] != day.toString() || p[1] != weekRow.toString()) continue
+            p[2].toIntOrNull()?.let { out.add(it) }
+        }
+        return out.toList()
     }
 
     fun loadAudienceIndex(): String? = prefs.getString(KEY_AUD_IDX, null)
