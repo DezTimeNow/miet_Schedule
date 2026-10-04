@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.sp
  * в главном меню, в заголовке экрана игры и в описании релиза. При
  * отдельном написании они со временем разъезжаются.
  */
-internal const val GAME_TITLE = "Тапай микросхему"
+internal const val GAME_TITLE = "Тапать микросхему"
 internal const val GAME_TAGLINE = "будь лучшим!!"
 
 /**
