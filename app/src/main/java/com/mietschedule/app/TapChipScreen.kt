@@ -1,16 +1,7 @@
 package com.mietschedule.app
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -59,8 +50,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -111,7 +100,6 @@ fun TapChipScreen(onBack: () -> Unit) {
     // ── связь ────────────────────────────────────────────────────────
     var phase by remember { mutableStateOf(Phase.Checking) }
     var top by remember { mutableStateOf<ChipTop.Top?>(null) }
-    var rank by remember { mutableIntStateOf(0) }
 
     // ── ник ──────────────────────────────────────────────────────────
     var nick by remember { mutableStateOf(ChipTop.savedNick(ctx)) }
@@ -164,7 +152,6 @@ fun TapChipScreen(onBack: () -> Unit) {
             try {
                 when (val r = ChipTop.submit(name, current, ChipTop.playerId(name))) {
                     is ChipTop.SubmitResult.Saved -> {
-                        rank = r.rank
                         // Новый скрипт отдаёт топ в ответе на запись, и
                         // второй запрос не нужен. Старый его не отдаёт, и
                         // тогда таблица молча замирала бы на том снимке,
@@ -188,7 +175,11 @@ fun TapChipScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             MietTopBar(
-                title = "Тапать микросхему",
+                // Название берётся из общей константы, а не пишется строкой.
+                // В шапке стоял свой вариант «Тапать микросхему», а в меню —
+                // «Тапай микросхему»: два названия одного и того же на двух
+                // соседних экранах.
+                title = GAME_TITLE,
                 subtitle = "Расписание МИЭТ",
                 onRefresh = onBack,
                 onChangeRole = onBack,
@@ -231,25 +222,22 @@ fun TapChipScreen(onBack: () -> Unit) {
 
                 Phase.Playing -> {
                     // ── счётчик ───────────────────────────────────────
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Счётчик сам подпрыгивает при тапе: Animatable
-                        // меняет кегль, а не рисует текст заново.
-                        Text(
-                            "$score",
-                            fontSize = (46f * counterScale.value).sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MIET_BLUE,
-                        )
-                        if (rank > 0) {
-                            Text(
-                                "  место ${'$'}rank",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = LocalAppColors.current.muted,
-                                modifier = Modifier.padding(top = 14.dp),
-                            )
-                        }
-                    }
+                    // Счётчик подпрыгивает при тапе: Animatable меняет кегль,
+                    // а не рисует текст заново.
+                    //
+                    // Рядом только число очков. Место в рейтинге здесь не
+                    // показывается: требование владельца — «это вообще юзеру
+                    // не нужно». Раньше здесь стояло «место ${'$'}rank», и
+                    // надпись выводилась буквально с $rank — выглядело как
+                    // «8 место $rank», и владелец принял это за количество
+                    // очков. Проверено живьём: rank действительно место,
+                    // то есть значение было верным, а вот подпись врала.
+                    Text(
+                        "$score",
+                        fontSize = (46f * counterScale.value).sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MIET_BLUE,
+                    )
 
                     Spacer(Modifier.height(10.dp))
 
@@ -329,24 +317,6 @@ fun TapChipScreen(onBack: () -> Unit) {
 
                     Spacer(Modifier.height(10.dp))
 
-                    TapButton(
-                        enabled = nick.isNotBlank(),
-                        onClick = {
-                            val now = System.currentTimeMillis()
-                            if (now - lastTapAt < ChipTop.MIN_TAP_GAP_MS) return@TapButton
-                            lastTapAt = now
-                            score += 1
-                            scope.launch {
-                                pulse.snapTo(1f)
-                                pulse.animateTo(0f, tween(380))
-                                counterScale.snapTo(1.18f)
-                                counterScale.animateTo(1f, tween(220))
-                            }
-                        },
-                    )
-
-                    Spacer(Modifier.height(6.dp))
-
                     // ── ник ──────────────────────────────────────────
                     NickRow(
                         nick = nick,
@@ -386,7 +356,6 @@ fun TapChipScreen(onBack: () -> Unit) {
                 // по идентификатору устройства, и игрок с заблокированной
                 // строкой не мог попасть в таблицу ни под каким ником. Теперь
                 // блокировки нет: ключ строки выведен из самого ника.
-                if (renamed) rank = 0
 
             },
         )
@@ -395,84 +364,6 @@ fun TapChipScreen(onBack: () -> Unit) {
 
 /** Что происходит с игрой. */
 private enum class Phase { Checking, NoNetwork, Playing }
-
-/**
- * Кнопка тапа под корпусом микросхемы.
- *
- * ПОЧЕМУ НЕ МЕНЯЕТСЯ LAYOUT. Первая версия анимировала масштаб через
- * graphicsLayer на самом Box. Нажатие сдвигало кнопку, а вместе с ней
- * приподнимался и «Топ игроков» — интерфейс дёргался. Здесь масштабируется
- * только содержимое (подпись и блик), а рамка остаётся неподвижной: её
- * размер задаётся Modifier, и она не участвует в анимации.
- *
- * НАЖАТИЕ. Кадр при нажатии — мгновенное затемнение фона без смещения.
- * Пружинного возврата нет: на быстрых тапах он читался как дрожание.
- */
-@Composable
-private fun TapButton(onClick: () -> Unit, enabled: Boolean) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-
-    // Пульсация только цветом рамки: масштаб и высота не трогаются, поэтому
-    // соседние элементы не сдвигаются. Период 1.6 с — достаточно медленно,
-    // чтобы не мешать игре и не отвлекать от счётчика.
-    val glow = rememberInfiniteTransition(label = "tapGlow")
-    val glowValue by glow.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "tapGlowValue",
-    )
-
-    val base = if (pressed) MIET_BLUE else MIET_BLUE.copy(alpha = 0.72f + 0.28f * glowValue)
-
-    Column(
-        Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(
-                    // Рамка светится по краю, корпус кнопки остаётся ровным.
-                    Brush.linearGradient(
-                        listOf(
-                            MIET_BLUE.copy(alpha = 0.35f * glowValue),
-                            MIET_BLUE.copy(alpha = 0.08f * glowValue),
-                        ),
-                    ),
-                )
-                .padding(3.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(base)
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    enabled = enabled,
-                    onClick = onClick,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            // Подпись. Сдвиг при нажатии — в пределах кнопки, поэтому
-            // содержимое страницы не двигается.
-            Text(
-                text = GAME_TITLE,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.graphicsLayer {
-                    translationY = if (pressed) 1f else 0f
-                    alpha = if (pressed) 0.85f else 1f
-                },
-            )
-        }
-    }
-}
 
 /** Имя игрока и кнопка смены. */
 @Composable
@@ -590,7 +481,8 @@ private fun NickDialog(
  * Таблица игроков.
  *
  * Своя строка помечается: без неё игрок в пятидесяти строках ищет себя
- * глазами. Место хранится в `rank` — оно приходит ответом скрипта.
+ * глазами. Место в рейтинге отдельно не показывается — требование
+ * владельца; здесь важно только найти свою строку.
  */
 @Composable
 private fun Leaderboard(top: ChipTop.Top?) {
