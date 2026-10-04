@@ -26,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -100,7 +101,14 @@ internal fun cleanReleaseNotes(raw: String): String {
         .replace("&gt;", ">")
         .replace("&amp;", "&")
     return decoded.lineSequence()
-        .map { it.trim().trimStart('#', '*', '-', ' ').trim() }
+        // Заголовок и буллет оформлены Markdown-звёздочками: «**Мини-игра**».
+        // trimStart убирал их только в начале строки, а закрывающая пара
+        // оставалась — пользователь читал «**Мини-игра**» вместе со звёздочками.
+        // Одиночный маркер буллета («* пункт») убирается, как и раньше, а вот
+        // ПАРНЫЕ звёздочки внутри строки («**Мини-игра**») — это обращение
+        // Markdown, и пользователь читал их как текст. Порядок важен: сначала
+        // парные, потом маркер в начале.
+        .map { it.trim().replace("**", "").trimStart('#', '*', '-', ' ').trim() }
         .filter { it.isNotEmpty() }
         .joinToString("\n")
         .take(1200)
@@ -130,7 +138,11 @@ fun UpdatePromptHost(
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     var stage by remember { mutableStateOf(UpdateStage.IDLE) }
     var errorText by remember { mutableStateOf("") }
-    var downloaded by remember { mutableStateOf(-1) }
+    // Сколько байт уже скачано и сколько ожидаем. Храним байты, а не мегабайты:
+    // пересчитывать в мегабайты на каждом обновлении — лишняя работа, а
+    // разница видна только в последней цифре.
+    var downloadedBytes by remember { mutableLongStateOf(-1L) }
+    var totalBytes by remember { mutableLongStateOf(0L) }
 
     // Диалог, открытый снаружи: снимаем ссылку только когда её закрыли,
     // иначе приложение удержит старый UpdateInfo в памяти.
@@ -152,13 +164,38 @@ fun UpdatePromptHost(
 
     val info = update ?: return
 
+    // Доля скачанного: null, когда размер неизвестен. Тогда полоса
+    // неопределённая, а не выдуманная.
+    fun progressValue(): Float? {
+        if (downloadedBytes < 0 || totalBytes <= 0) return null
+        return (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+    }
+
+    // Строка состояния загрузки. Показываем и проценты, и мегабайты: по
+    // процентам видно движение, по мегабайтам — сколько ещё ждать.
+    fun downloadLine(): String {
+        val pct = progressValue()?.let { (it * 100).toInt() }
+        return if (pct == null) {
+            "Скачиваю обновление…"
+        } else {
+            // Формат «X.X МБ из Y.Y МБ» — тот же, что у sizeLabel в
+            // UpdateInfo: свой разделитель, без String.format и его локали.
+            fun mb(bytes: Long): String {
+                val tenths = (bytes / 1048576.0 * 10 + 0.5).toInt()
+                return "${tenths / 10}.${tenths % 10}"
+            }
+            "$pct% · ${mb(downloadedBytes)} МБ из ${mb(totalBytes)} МБ"
+        }
+    }
+
     // Когда окно закрыто (любым способом) — обнуляем и ручку, иначе возврат на
     // экран «О программе» снова подхватит то же обновление и покажет его.
     fun closeDialog() {
         update = null
         stage = UpdateStage.IDLE
         errorText = ""
-        downloaded = -1
+        downloadedBytes = -1L
+        totalBytes = 0L
         dialogHandle?.dismiss()
     }
 
@@ -192,15 +229,12 @@ fun UpdatePromptHost(
             Column(Modifier.heightIn(max = 340.dp)) {
                 when (stage) {
                     UpdateStage.DOWNLOADING -> {
+                        val progress = progressValue()
                         Text(
-                            if (downloaded >= 0) "Скачано $downloaded%.1f МБ из ${info.sizeLabel}"
-                            else "Скачиваю обновление…",
+                            downloadLine(),
                             fontSize = 14.sp,
                         )
                         Spacer(Modifier.height(12.dp))
-                        val progress = if (info.sizeBytes > 0 && downloaded >= 0) {
-                            (downloaded.toFloat() / info.sizeBytes).coerceIn(0f, 1f)
-                        } else null
                         if (progress != null) {
                             LinearProgressIndicator(
                                 progress = { progress },
@@ -208,6 +242,8 @@ fun UpdatePromptHost(
                                 color = MIET_BLUE,
                             )
                         } else {
+                            // Размер неизвестен — крутимся, но честно: цифры
+                            // не выдумываем, просто показываем «идёт загрузка».
                             LinearProgressIndicator(
                                 modifier = Modifier.fillMaxWidth().height(6.dp),
                                 color = MIET_BLUE,
@@ -301,10 +337,22 @@ fun UpdatePromptHost(
                         Button(
                             onClick = {
                                 stage = UpdateStage.DOWNLOADING
-                                downloaded = -1
+                                downloadedBytes = -1L
+                                totalBytes = 0L
                                 scope.launch {
                                     runCatching {
-                                        UpdateChecker.downloadApk(ctx, info)
+                                        UpdateChecker.downloadApk(ctx, info) { got, total ->
+                                            // Колбэк приходит из потока ввода-вывода,
+                                            // а состояние Compose живёт в main-потоке.
+                                            // Без переключения обновление полосы было
+                                            // бы запрещено и молча терялось.
+                                            val g = got
+                                            val t = total
+                                            scope.launch {
+                                                downloadedBytes = g
+                                                totalBytes = t
+                                            }
+                                        }
                                     }.onSuccess { apk ->
                                         // Установщик на этом устройстве может быть
                                         // отключён или отсутствовать (например на

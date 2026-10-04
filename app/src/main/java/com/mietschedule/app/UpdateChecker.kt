@@ -99,8 +99,22 @@ object UpdateChecker {
             }
         }
 
-    /** Скачивание APK релиза с проверкой sha256. Бросает исключение при несовпадении. */
-    suspend fun downloadApk(ctx: Context, update: UpdateInfo): File = withContext(Dispatchers.IO) {
+    /**
+     * Скачивание APK релиза с проверкой sha256. Бросает исключение при несовпадении.
+     *
+     * [onProgress] вызывается с числом уже скачанных байт по ходу загрузки.
+     * Без него экран висел с неопределённой полосой всё время скачивания:
+     * [kotlin.io.copyTo] о прогрессе не сообщает, а результат приходит только
+     * после конца файла, то есть показывать было нечего.
+     *
+     * Колбэк вызывается из потока ввода-вывода — UI-состояние из него трогать
+     * нельзя, вызывающий обязан переключиться на свой контекст.
+     */
+    suspend fun downloadApk(
+        ctx: Context,
+        update: UpdateInfo,
+        onProgress: ((downloaded: Long, total: Long) -> Unit)? = null,
+    ): File = withContext(Dispatchers.IO) {
         // Кладём в cache/updates — этот путь объявлен в res/xml/file_paths.xml.
         // Внешнее хранилище специально не используем: на Android 11+ доступ к
         // общей папке Download из приложения ограничен, и FileProvider такое
@@ -116,7 +130,32 @@ object UpdateChecker {
                 // но тела нет, и `body!!` падал бы на нём.
                 val body = resp.body ?: error("Пустой ответ при скачивании")
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                body.byteStream().use { it.copyTo(out) }
+
+                // Размер берём из ответа сервера, а не только из описания
+                // релиза: у файла заголовок Content-Length точный, и по нему
+                // видно реальный объём даже когда в релизе он не указан.
+                val total = body.contentLength().takeIf { it > 0 } ?: update.sizeBytes
+                val buffer = ByteArray(64 * 1024)
+                var got = 0L
+                var lastReport = 0L
+                body.byteStream().use { input ->
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        out.write(buffer, 0, read)
+                        got += read
+                        // Отчёт не чаще раза в 100 мс: на быстрой сети read()
+                        // вернётся сотни раз в секунду, и каждое обновление
+                        // состояния заставляло бы перерисовывать диалог.
+                        if (got - lastReport >= 100 * 1024) {
+                            lastReport = got
+                            onProgress?.invoke(got, total)
+                        }
+                    }
+                }
+                // Последний отчёт обязателен: без него полоса замирала бы
+                // на 99% и не доходила до конца.
+                onProgress?.invoke(got, total)
             }
         }
         update.sha256?.takeIf { it.isNotBlank() }?.let { expected ->
