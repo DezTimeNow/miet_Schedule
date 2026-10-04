@@ -380,6 +380,25 @@ fun AppRoot(
                     runCatching { TeacherIndex.buildFromCache(api, groups) }
                         .onSuccess { Log.i("Refresh", "Индекс преподавателей: $it") }
                         .onFailure { Log.w("Refresh", "Индекс преподавателей: ${it.message}") }
+
+                    // Начало семестра. Оно кэшируется на сутки, а кнопка
+                    // «обновить всё» его не трогала: после смены семестра
+                    // приложение целый день показывало недели от старой
+                    // даты. Кнопка обещает актуализировать всё — значит и
+                    // семестр тоже.
+                    runCatching { api.semestrStart() }
+                        .onSuccess { Log.i("Refresh", "Семестр с $it") }
+                        .onFailure { Log.w("Refresh", "Семестр: ${it.message}") }
+
+                    // Отметка «проверено» под текущим объектом. Без неё после
+                    // обновления на экране оставалось «проверено давно»,
+                    // хотя кэш только что перезаписан, и в отчёте об ошибке
+                    // уходила неверная метка.
+                    selection?.trim()?.takeIf { it.isNotEmpty() }?.let { sel ->
+                        runCatching { api.markCheck(role, sel) }
+                            .onFailure { Log.w("Refresh", "Метка проверки: ${it.message}") }
+                    }
+
                     Log.i("Refresh", "Готово: расписаний ${schedules.get()} из $groupsN")
                 }.onFailure {
                     Log.w("Refresh", "Обновление с ошибкой: ${it.message}")
@@ -389,6 +408,20 @@ fun AppRoot(
             progressJob.cancel()
             // Сигнал экрану перечитать кэш. Без этого он показывал бы старое.
             dataGeneration++
+
+            // Напоминания строятся по избранным группам, то есть по кэшу.
+            // Кэш перезаписан, а будильники остались на старых временах:
+            // человек получил звонок по расписанию, которого уже нет.
+            // Пересчёт читает и разбирает JSON, поэтому идёт на IO.
+            //
+            // Раньше здесь ничего не было — перепланирование вызывал только
+            // RefreshWorker, то есть кнопка обновления будильники не трогала.
+            if (result.first > 0) {
+                withContext(Dispatchers.IO) {
+                    runCatching { ReminderScheduler.reschedule(context, api) }
+                        .onFailure { Log.w("Refresh", "Напоминания не перепланированы: ${it.message}") }
+                }
+            }
             refreshNote = if (result.first > 0) {
                 "Обновлено ${result.first} из ${result.second}"
             } else "Ничего не обновилось"

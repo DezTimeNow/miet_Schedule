@@ -199,7 +199,12 @@ fun TapChipScreen(onBack: () -> Unit) {
                 // соседних экранах.
                 title = GAME_TITLE,
                 subtitle = "Расписание МИЭТ",
-                onRefresh = onBack,
+                // ⭯ обновляет ТАБЛИЦУ ИГРОКОВ — то, что на экране. Раньше
+                // здесь стояла заглушка onRefresh = onBack, и кнопка
+                // обновления просто выкидывала в меню: человек нажимал
+                // «обновить», а его выносило назад. Это и было «кнопка
+                // не работает».
+                onRefresh = { scope.launch { top = ChipTop.loadTop() ?: top } },
                 onChangeRole = onBack,
                 onBack = onBack,
             )

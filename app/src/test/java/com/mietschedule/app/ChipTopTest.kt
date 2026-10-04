@@ -1048,4 +1048,123 @@ class ChipTopTest {
         )
     }
 
+    /**
+     * Кнопки в шапке не выдают себя за заглушки.
+     *
+     * Требование владельца от 0.48: «кнопка назад где-то не работает».
+     * Системный «назад» был в порядке — перехват один и на всех экранах.
+     * А вот ⭯ в шапке на двух экранах был заглушкой `onRefresh = onBack`,
+     * то есть по кнопке обновления приложение просто выкидывало назад.
+     * На игре теперь обновляется таблица игроков.
+     */
+    @Test
+    fun `обновление в шапке не ведёт назад`() {
+        val game = stripComments(srcFile("TapChipScreen.kt"))
+        assertFalse(
+            "кнопка обновления на экране игры не должна делать назад",
+            game.contains("onRefresh = onBack")
+        )
+        assertTrue(
+            "кнопка обновления должна перечитывать таблицу игроков",
+            game.contains("onRefresh = {") && game.contains("ChipTop.loadTop()")
+        )
+        // Стрелка «‹» и «Меню» на экране игры ведут в меню — это верно,
+        // игра открывается оттуда.
+        assertTrue(game.contains("onChangeRole = onBack"))
+        assertTrue(game.contains("onBack = onBack"))
+    }
+
+    /**
+     * Системная кнопка «назад» перехватывается один раз и на всех экранах.
+     *
+     * Проверяем, что перехват не расползся по экранам: два лишних
+     * BackHandler в GroupPickerUi.kt и ScheduleUi.kt когда-то висели
+     * импортами без единого вызова.
+     */
+    @Test
+    fun `перехват назад один и в корне`() {
+        val main = srcFile("MainActivity.kt")
+        val code = stripComments(main)
+        assertEquals(
+            "перехват «назад» должен быть ровно один",
+            1, Regex("""BackHandler\(enabled""").findAll(code).count()
+        )
+        // Экраны без собственного перехвата.
+        for (f in listOf("GroupPickerUi.kt", "ScheduleUi.kt")) {
+            assertFalse(
+                "в $f не должно быть импорта BackHandler без вызова",
+                srcFile(f).contains("BackHandler")
+            )
+        }
+    }
+
+    /**
+     * Кнопка обновления актуализирует ВСЁ расписание.
+     *
+     * Требование владельца от 0.48: «кнопка обновить должна актуализировать
+     * всю информацию о расписании». Кнопка уже брала список групп, все
+     * расписания, список аудиторий, ответ по выбранной аудитории и индекс
+     * преподавателей, но у неё было три дыры:
+     *
+     *  - начало семестра кэшируется на сутки и кнопкой не обновлялось;
+     *  - отметка «проверено» не ставилась, и экран показывал «давно»;
+     *  - напоминания не перепланировались, то есть будильники оставались на
+     *    старых временах.
+     */
+    @Test
+    fun `кнопка обновления актуализирует всё`() {
+        val main = srcFile("MainActivity.kt")
+        val fn = main.substringAfter("fun refreshCurrent()")
+        val body = fn.substringBefore("\n    }\n")
+
+        // Что уже было и должно остаться.
+        assertTrue("список групп с сайта", body.contains("fetchGroups(force = true)"))
+        assertTrue("все расписания групп", body.contains("fetchSchedule"))
+        assertTrue("список аудиторий", body.contains("fetchAudiences"))
+        assertTrue("ответ по выбранной аудитории", body.contains("fetchAudience(code)"))
+        assertTrue("индекс преподавателей", body.contains("buildFromCache"))
+
+        // Три дыры, которые закрыты.
+        assertTrue(
+            "кнопка должна обновлять начало семестра",
+            body.contains("api.semestrStart()")
+        )
+        assertTrue(
+            "кнопка должна ставить отметку «проверено»",
+            body.contains("api.markCheck(role, sel)")
+        )
+        assertTrue(
+            "кнопка должна перепланировать напоминания",
+            body.contains("ReminderScheduler.reschedule")
+        )
+    }
+
+    /**
+     * Фоновое обновление работает не только у студента.
+     *
+     * Раньше RefreshWorker выходил сразу для преподавателя и аудитории, у
+     * которых расписание собирается из кэшей групп, — то есть обновлял эти
+     * кэши тот же работник, а фонового обновления у них не было вовсе.
+     * По решению владельца выход снят для всех ролей.
+     */
+    @Test
+    fun `фоновое обновление не только для студента`() {
+        val w = stripComments(srcFile("RefreshWorker.kt"))
+        assertFalse(
+            "выход для не-студентов должен быть снят",
+            w.contains("role() != Role.STUDENT")
+        )
+        assertFalse(
+            "в doWork не должно быть жёсткой роли STUDENT",
+            w.contains("Role.STUDENT")
+        )
+        // Цели выбираются функцией, а не только из избранного студента.
+        assertTrue("должна быть функция выбора целей", w.contains("internal fun targetsFor"))
+        assertTrue("цели берутся из избранного текущей роли", w.contains("prefs.favGroups(prefs.role())"))
+        assertTrue(
+            "метка проверки должна относиться к своей роли",
+            w.contains("api.markCheck(role, group)")
+        )
+    }
+
 }

@@ -41,24 +41,27 @@ class RefreshWorker(
         val prefs = GroupPrefs(ctx)
         val api = MietApi(ctx)
 
-        if (prefs.role() != Role.STUDENT) {
-            // Расписание преподавателя собирается из кэша всех 343 групп:
-            // такой обход в фоне дорог и часто не нужен. Преподаватель сам
-            // жмёт «Обновить всё» — кнопка ходит в сеть принудительно.
-            Log.i(TAG, "Роль не студент, фоновое обновление пропускаю")
-            return Result.success()
-        }
-
-        // Избранные группы — приоритет: по ним строятся напоминания.
-        val favs = prefs.favGroups(Role.STUDENT).filter { it.isNotBlank() }.distinct()
-        val current = prefs.load()?.trim()
-        val targets = (if (current.isNullOrBlank()) favs else favs + current).distinct()
+        // Группы, которые нужно освежить.
+        //
+        // Раньше здесь стоял выход для всех, кроме студента: мол, расписание
+        // преподавателя собирается из кэша 343 групп и такой обход дорог.
+        // Но обновляет-то эти кэши ТОТ ЖЕ работник, что и студенческие, —
+        // то есть у преподавателя и у аудитории фонового обновления не
+        // было вовсе, и их расписание жило до ручного нажатия. Требование
+        // владельца: актуальные данные без ручного обновления.
+        //
+        // Лишних запросов это не добавляет: список групп у роли один и тот
+        // же, обходятся ровно те же кэши, что и раньше. Для преподавателя
+        // добавляется его избранное — оно идёт в тех же целях, что и
+        // у студента, по нему строится индекс.
+        val targets = targetsFor(prefs)
 
         if (targets.isEmpty()) {
             Log.i(TAG, "Нет ни избранных, ни выбранной группы — сеть не трогаю")
             return Result.success()
         }
 
+        val role = prefs.role()
         val fresh = mutableListOf<String>()
         val stale = targets.filter { group ->
             api.scheduleFresh(group).also { ok -> if (ok) fresh += group }
@@ -72,7 +75,7 @@ class RefreshWorker(
         var failures = 0
         var updated = 0
         for (group in stale) {
-            api.markCheck(Role.STUDENT, group)
+            api.markCheck(role, group)
             try {
                 val raw = api.fetchSchedule(group)
                 if (raw.isBlank()) {
@@ -104,6 +107,30 @@ class RefreshWorker(
     companion object {
         private const val TAG = "RefreshWorker"
         private const val UNIQUE = "schedule_refresh"
+
+        /**
+         * Какие группы освежать в фоне.
+         *
+         * Для студента это его избранное и текущая группа — по ним строятся
+         * напоминания, поэтому их кэши обязаны быть свежими.
+         *
+         * Для преподавателя это избранные ФИО и текущий: его расписание
+         * собирается обходом расписаний всех групп, а значит оно тем более
+         * должно опираться на свежие кэши. Раньше фонового обновления у него
+         * не было вовсе, и данные жили до ручного нажатия.
+         *
+         * Для аудитории то же самое: её занятость склеивается из расписаний
+         * групп по имени помещения, поэтому освежаем именно их.
+         *
+         * Вынесено отдельно, потому что правило «избранное плюс текущее»
+         * одинаково для всех ролей, а различается только то, чьи избранные
+         * берутся.
+         */
+        internal fun targetsFor(prefs: GroupPrefs): List<String> {
+            val favs = prefs.favGroups(prefs.role()).filter { it.isNotBlank() }.distinct()
+            val current = prefs.load()?.trim()
+            return (if (current.isNullOrBlank()) favs else favs + current).distinct()
+        }
 
         /**
          * Зарегистрировать периодическую задачу. Повторный вызов безопасен.
