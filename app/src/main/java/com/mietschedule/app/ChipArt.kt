@@ -9,15 +9,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import kotlin.math.min
 
@@ -26,9 +22,17 @@ import kotlin.math.min
  *
  * Рисуется кодом, а не картинкой, по двум причинам. Первая — картинка
  * растягивается мыльно на экранах разной плотности, а микросхема должна
- * оставаться резкой: на ней 28 выводов, и размытые окончания читаются как
+ * оставаться резкой: на ней 14 выводов, и размытые окончания читаются как
  * грязь. Вторая — рисунок обязан реагировать на нажатие, то есть иметь
  * состояние; у статичного PNG для этого нужен был бы второй файл.
+ *
+ * ПОЧЕМУ ВЫВОДЫ РАСПОЛОЖЕНЫ ИМЕННО ТАК. Настоящая микросхема в корпусе
+ * DIP-28 имеет по 7 выводов на каждой длинной стороне и ничего на коротких.
+ * Прежняя версия рисовала 3 вывода сверху-снизу и 4 слева-справа, причём
+ * все они сходились в одной точке корпуса — получался крест в середине
+ * микросхемы, а не выводы по краям. Владелец назвал рисунок кривым, и
+ * это был не каприз: геометрию можно проверить, и она не сходилась
+ * (все выводы попадали в координаты 200,178 — центр корпуса).
  *
  * Все размеры считаются от габаритов холста, поэтому корпус занимает
  * одинаковую долю экрана и на 5", и на складном.
@@ -41,31 +45,25 @@ class ChipArt(
     private val silkscreen: Color,
     private val highlight: Color,
 ) {
-    /**
-     * Один вывод: скруглённый прямоугольник.
-     *
-     * Выводы по краям повёрнуты — рисуются повёрнутым прямоугольником
-     * вокруг точки. Кегль скругления равен половине толщины, иначе
-     * выводы выглядят срезанными.
-     */
-    /** Рисует один вывод микросхемы. */
+
+    /** Рисует один вывод: прямоугольник, торчащий наружу от стороны. */
     private fun DrawScope.pin(
         center: Offset,
+        width: Float,
         length: Float,
-        thickness: Float,
         vertical: Boolean,
     ) {
         drawRoundRect(
             color = pinColor,
             topLeft = Offset(
-                center.x - (if (vertical) thickness else length) / 2f,
-                center.y - (if (vertical) length else thickness) / 2f,
+                center.x - (if (vertical) width else length) / 2f,
+                center.y - (if (vertical) length else width) / 2f,
             ),
             size = Size(
-                if (vertical) thickness else length,
-                if (vertical) length else thickness,
+                if (vertical) width else length,
+                if (vertical) length else width,
             ),
-            cornerRadius = CornerRadius(thickness / 2.6f),
+            cornerRadius = CornerRadius(width / 2.4f),
         )
     }
 
@@ -82,10 +80,11 @@ class ChipArt(
         val w = size.width
         val h = size.height
 
-        // Габариты корпуса. Держим соотношение 1.55:1 — настоящая
-        // микросхема в DIP-корпусе, а не квадрат.
-        val chipW = w * 0.74f
-        val chipH = min(chipW / 1.55f, h * 0.60f)
+        // Габариты корпуса. Соотношение 1.45:1 — настоящая микросхема в
+        // DIP-корпусе, а не квадрат. Корпус занимает большую часть холста:
+        // раньше он был 74 % ширины, и рисунок выглядел мелким и тесным.
+        val chipW = w * 0.80f
+        val chipH = min(chipW / 1.45f, h * 0.62f)
         val cx = w / 2f
         val cy = h / 2f
 
@@ -95,25 +94,27 @@ class ChipArt(
         val bodyH = chipH * pressScale
         val left = cx - bodyW / 2f
         val top = cy - bodyH / 2f
-        val radius = bodyH * 0.08f
+        val radius = bodyH * 0.055f
 
         // ── выводы ──────────────────────────────────────────────────────
-        // Три сверху и снизу, четыре слева и справа — как у DIP-28.
-        // Рисуются до корпуса: вывод уходит под его край.
-        val t = bodyH * 0.055f          // толщина вывода
-        val lenV = bodyH * 0.20f        // длина вертикальных
-        val lenH = bodyW * 0.075f       // длина боковых
-        val inset = bodyH * 0.055f      // отступ от края корпуса
+        // По 7 на каждой длинной стороне, перпендикулярно стороне и с
+        // одинаковым вылетом наружу. Отступ от углов не даёт первому
+        // выводу слипнуться со скруглением корпуса.
+        val pinW = bodyW * 0.030f        // ширина вывода вдоль стороны
+        val pinOut = bodyH * 0.115f      // насколько вывод торчит наружу
+        val margin = bodyW * 0.115f      // отступ от угла до первого вывода
+        val span = bodyW - 2f * margin
+        val step = span / (PINS_PER_SIDE - 1)
 
-        for (i in 0 until 3) {
-            val y = top + bodyH / 4f * (i + 1)
-            pin(Offset(cx, y - lenV / 2f - inset), lenV, t, vertical = true)
-            pin(Offset(cx, y + lenV / 2f + inset), lenV, t, vertical = true)
-        }
-        for (i in 0 until 4) {
-            val x = left + bodyW / 5f * (i + 1)
-            pin(Offset(x - lenH / 2f - inset, cy), lenH, t, vertical = false)
-            pin(Offset(x + lenH / 2f + inset, cy), lenH, t, vertical = false)
+        // Нижние и верхние выводы: центр находится снаружи корпуса, тело
+        // вывода заходит под его край — поэтому рисуем до корпуса.
+        for (i in 0 until PINS_PER_SIDE) {
+            val x = left + margin + step * i
+
+            // Сверху: вывод уходит вверх от корпуса.
+            pin(Offset(x, top - pinOut / 2f), pinW, pinOut, vertical = true)
+            // Снизу: зеркально.
+            pin(Offset(x, top + bodyH + pinOut / 2f), pinW, pinOut, vertical = true)
         }
 
         // ── свечение при нажатии ────────────────────────────────────────
@@ -152,24 +153,24 @@ class ChipArt(
         // литьём. Одна линия даёт объём без градиента.
         drawRoundRect(
             color = Color.White.copy(alpha = 0.10f),
-            topLeft = Offset(left + bodyW * 0.055f, top + bodyH * 0.06f),
-            size = Size(bodyW * 0.89f, bodyH * 0.88f),
-            cornerRadius = CornerRadius(radius * 0.72f),
+            topLeft = Offset(left + bodyW * 0.045f, top + bodyH * 0.075f),
+            size = Size(bodyW * 0.91f, bodyH * 0.85f),
+            cornerRadius = CornerRadius(radius * 0.62f),
             style = Stroke(width = 1.6f),
         )
 
         // Угловая метка «пин 1» — вырез в левом верхнем углу. На настоящей
         // микросхеме она есть, и без неё рисунок неузнаваем.
-        val notch = bodyH * 0.13f
+        val notch = bodyH * 0.055f
         drawCircle(
             color = bodyBottom.copy(alpha = 0.55f),
             radius = notch,
-            center = Offset(left + radius * 0.9f, top + radius * 0.9f),
+            center = Offset(left + radius * 0.85f, top + radius * 0.85f),
         )
         drawCircle(
             color = Color.Black.copy(alpha = 0.20f),
-            radius = notch * 0.62f,
-            center = Offset(left + radius * 0.9f, top + radius * 0.9f),
+            radius = notch * 0.60f,
+            center = Offset(left + radius * 0.85f, top + radius * 0.85f),
         )
 
         // ── маркировка ──────────────────────────────────────────────────
@@ -178,13 +179,13 @@ class ChipArt(
         val labelLayout = measurer.measure(
             text = chipLabel,
             style = TextStyle(
-                fontSize = (bodyH * 0.20f).sp,
+                fontSize = (bodyH * 0.235f).sp,
                 fontWeight = FontWeight.Bold,
                 color = silkscreen.copy(alpha = 0.92f),
                 letterSpacing = 1.sp,
             ),
         )
-        val markY = cy - labelLayout.size.height * 1.55f
+        val markY = cy - labelLayout.size.height * 1.45f
         drawText(
             textLayoutResult = labelLayout,
             topLeft = Offset(cx - labelLayout.size.width / 2f, markY),
@@ -193,7 +194,7 @@ class ChipArt(
         val subLayout = measurer.measure(
             text = "ТАПНИ",
             style = TextStyle(
-                fontSize = (bodyH * 0.105f).sp,
+                fontSize = (bodyH * 0.095f).sp,
                 fontWeight = FontWeight.Medium,
                 color = silkscreen.copy(alpha = 0.55f),
                 letterSpacing = 2.sp,
@@ -201,12 +202,12 @@ class ChipArt(
         )
         drawText(
             textLayoutResult = subLayout,
-            topLeft = Offset(cx - subLayout.size.width / 2f, cy + bodyH * 0.19f),
+            topLeft = Offset(cx - subLayout.size.width / 2f, cy + bodyH * 0.20f),
         )
 
         // Штрих «заземления» под маркировкой — как на корпусе.
-        val barW = bodyW * 0.34f
-        val barY = cy + bodyH * 0.06f
+        val barW = bodyW * 0.26f
+        val barY = cy + bodyH * 0.055f
         val path = Path().apply {
             moveTo(cx - barW / 2f, barY)
             lineTo(cx + barW / 2f, barY)
@@ -230,17 +231,28 @@ class ChipArt(
                     Color.White.copy(alpha = 0.16f),
                     Color.White.copy(alpha = 0.02f),
                 ),
-                startY = top + bodyH * 0.08f,
-                endY = top + bodyH * 0.46f,
+                startY = top + bodyH * 0.09f,
+                endY = top + bodyH * 0.44f,
             ),
-            topLeft = Offset(left + bodyH * 0.10f, top + bodyH * 0.08f),
-            size = Size(bodyW - bodyH * 0.20f, bodyH * 0.38f),
-            cornerRadius = CornerRadius(bodyH * 0.06f),
+            topLeft = Offset(left + bodyW * 0.055f, top + bodyH * 0.09f),
+            size = Size(bodyW * 0.89f, bodyH * 0.35f),
+            cornerRadius = CornerRadius(bodyH * 0.05f),
         )
     }
 
     companion object {
         /** Метка на корпусе. */
         const val CHIP_LABEL = "МИЭТ"
+
+        /**
+         * Выводов на длинной стороне.
+         *
+         * На корпусе DIP-28 их 14 на стороне, но при ширине экрана
+         * 320 px семь выводов читаются, а четырнадцать сливаются в
+         * полосу. Значение вынесено в константу, потому что на нём держится
+         * геометрия рисунка: шаг между выводами считается из него, и
+         * расхождение с кодом даст выводы, наезжающие друг на друга.
+         */
+        const val PINS_PER_SIDE = 7
     }
 }
