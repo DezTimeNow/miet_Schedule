@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,6 +60,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import com.mietschedule.app.R
 
@@ -115,10 +115,18 @@ fun TapChipScreen(onBack: () -> Unit) {
     var score by remember { mutableIntStateOf(0) }
     var lastTapAt by remember { mutableStateOf(0L) }
 
+    // Место в рейтинге. Приходит из ответа скрипта: тот всё равно читает
+    // таблицу целиком, чтобы разобрать позицию, и отдать её в том же ответе
+    // стоит ему ничего. Ноль — «вне топа», тогда показывать нечего.
+    //
+    // Хранится отдельно от score: очки меняются каждый тап, а место — раз
+    // в SYNC_INTERVAL_MS. Смешивать их в одном состоянии нельзя, иначе
+    // надпись прыгала бы на каждый тап.
+    var rank by remember { mutableIntStateOf(0) }
+
     // ── анимации нажатия ─────────────────────────────────────────────
-    // pulse — вспышка, гаснет от 1 до 0 после тапа; press держится, пока
-    // палец на корпусе; counterScale подпрыгивает на счётчике.
-    val pulse = remember { Animatable(0f) }
+    // press держится, пока палец на корпусе; counterScale подпрыгивает на
+    // счётчике через graphicsLayer, то есть без влияния на раскладку.
     val press = remember { Animatable(0f) }
     val counterScale = remember { Animatable(1f) }
 
@@ -165,6 +173,11 @@ fun TapChipScreen(onBack: () -> Unit) {
                         // остаётся живым на любой версии скрипта.
                         val fresh = r.top ?: ChipTop.loadTop()
                         fresh?.let { top = it }
+                        // Место обновляем только если скрипт его прислал.
+                        // При r.rank == 0 (вне топа) прошлый результат
+                        // стирать нельзя: иначе надпись мигала бы «место N»
+                        // и исчезала между двумя синхронизациями.
+                        if (r.rank > 0) rank = r.rank
                     }
                     else -> Unit
                 }
@@ -237,19 +250,53 @@ fun TapChipScreen(onBack: () -> Unit) {
                     // «8 место $rank», и владелец принял это за количество
                     // очков. Проверено живьём: rank действительно место,
                     // то есть значение было верным, а вот подпись врала.
-                    Text(
-                        "$score",
-                        fontSize = (46f * counterScale.value).sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MIET_BLUE,
-                    )
+                    // Число очков. Кегль ФИКСИРОВАН — анимация идёт через
+                    // graphicsLayer, а не через fontSize.
+                    //
+                    // Почему так: fontSize меняет размер строки, поэтому при
+                    // каждом тапе высота блока менялась, Column пересчитывал
+                    // раскладку, и «Топ игроков» вместе с микросхемой прыгал.
+                    // Плюс на переходе 9→10 и 99→100 число становилось шире, и
+                    // центровка дёргалась вбок. graphicsLayer рисует крупнее,
+                    // но на измерение не влияет: раскладка стоит на месте.
+                    //
+                    // transformOrigin = центр: масштаб растёт в обе стороны,
+                    // цифры не «уезжают» от центра экрана.
+                    Box(
+                        Modifier.height(SCORE_BOX_HEIGHT.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "$score",
+                            fontSize = SCORE_FONT_SP.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MIET_BLUE,
+                            modifier = Modifier.graphicsLayer {
+                                scaleX = counterScale.value
+                                scaleY = counterScale.value
+                                transformOrigin = TransformOrigin(0.5f, 0.5f)
+                            },
+                        )
+                    }
+
+                    // Место в топе — строкой под очками. Раньше такая строка
+                    // стояла здесь же, но собиралась как "место ${'$'}rank",
+                    // и интерполяция не сработала: на экране выходило
+                    // «место $rank». Сейчас это [rankLabel], где значение
+                    // подставляется как число.
+                    val place = rankLabel(rank)
+                    if (place != null) {
+                        Text(
+                            place,
+                            fontSize = 15.sp,
+                            color = LocalAppColors.current.muted,
+                        )
+                    }
 
                     Spacer(Modifier.height(10.dp))
 
                     // ── микросхема ────────────────────────────────────
-                    val glow = pulse.value
                     val pressAmt = press.value
-                    val tapScore = score
 
                     Box(
                         Modifier
@@ -301,8 +348,6 @@ fun TapChipScreen(onBack: () -> Unit) {
                                             // onTap — обычный обработчик, поэтому
                                             // запуск отдельный.
                                             scope.launch {
-                                                pulse.snapTo(1f)
-                                                pulse.animateTo(0f, tween(380))
                                                 counterScale.snapTo(1.18f)
                                                 counterScale.animateTo(1f, tween(220))
                                             }
@@ -361,6 +406,34 @@ fun TapChipScreen(onBack: () -> Unit) {
 
 /** Что происходит с игрой. */
 private enum class Phase { Checking, NoNetwork, Playing }
+
+/**
+ * Подпись места в рейтинге под счётом очков.
+ *
+ * Возвращает null, когда показывать нечего: до первой синхронизации места
+ * ещё нет, а вне топа скрипт отдаёт 0. Пустая строка в этом случае означала
+ * бы пустое место под очками и лишний вертикальный зазор.
+ *
+ * Отдельная функция, а не конкатенация на экране, потому что именно здесь
+ * раньше проскочила неотработавшая интерполяция.
+ */
+internal fun rankLabel(rank: Int): String? = when {
+    rank <= 0 -> null
+    else -> "место $rank"
+}
+
+/**
+ * Геометрия счётчика очков.
+ *
+ * Высота задана явно, потому что счётчик теперь анимируется масштабом, а
+ * масштаб не влияет на измерение: без Box с фиксированной высотой блок
+ * схлопывался бы до кегля текста и строка под ним прыгала бы.
+ *
+ * SCORE_FONT_SP задан числом, а не выражением с counterScale: кегль обязан
+ * быть постоянным, иначе вся правка выше теряет смысл.
+ */
+private const val SCORE_FONT_SP = 46f
+private const val SCORE_BOX_HEIGHT = 62
 
 /** Имя игрока и кнопка смены. */
 @Composable
