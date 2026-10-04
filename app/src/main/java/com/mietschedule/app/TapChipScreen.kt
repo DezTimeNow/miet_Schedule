@@ -1,6 +1,7 @@
 package com.mietschedule.app
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -327,6 +330,7 @@ fun TapChipScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(10.dp))
 
                     TapButton(
+                        enabled = nick.isNotBlank(),
                         onClick = {
                             val now = System.currentTimeMillis()
                             if (now - lastTapAt < ChipTop.MIN_TAP_GAP_MS) return@TapButton
@@ -365,13 +369,33 @@ fun TapChipScreen(onBack: () -> Unit) {
                 editingNick = false
             },
             onSave = { value ->
+                val renamed = nickDraft.trim().isNotEmpty() &&
+                    value.trim() != nick.trim()
                 nickDraft = value
                 ChipTop.saveNick(ctx, value)
-                // Смена ника при уже набранном счёте: строка в таблице
-                // принадлежит установке, а не имени, поэтому отправка
-                // последнего счёта переименует её.
                 nick = value
                 editingNick = false
+                // Смена имени = новый игрок. Счёт обнуляется на устройстве
+                // и строка удаляется из таблицы: иначе человек переименовывался,
+                // набирал очки и оставался в топе под прежним именем, не
+                // находя себя. Раньше здесь отправлялся счёт 0, скрипт его
+                // отклонял, и ничего не менялось.
+                if (renamed) {
+                    score = 0
+                    lastTapAt = 0L
+                    rank = 0
+                    scope.launch {
+                        when (val r = ChipTop.reset(value, ChipTop.installId(ctx))) {
+                            is ChipTop.SubmitResult.Saved -> r.top?.let { top = it }
+                            else -> {
+                                // Скрипт мог быть ещё старым и не знать про
+                                // сброс. Тогда читаем топ обычным запросом,
+                                // чтобы список не остался пустым.
+                                ChipTop.loadTop()?.let { top = it }
+                            }
+                        }
+                    }
+                }
             },
         )
     }
@@ -381,59 +405,80 @@ fun TapChipScreen(onBack: () -> Unit) {
 private enum class Phase { Checking, NoNetwork, Playing }
 
 /**
- * Кнопка «Тапай микросхему» под корпусом.
+ * Кнопка тапа под корпусом микросхемы.
  *
- * Пульсирует в покое, поэтому на главном экране и в игре видно, что
- * элемент интерактивный, и нажимается уже по привычке. Сама микросхема
- * тоже считает тапы — кнопка не заменяет её, а подсказывает, что
- * нажимать.
+ * ПОЧЕМУ НЕ МЕНЯЕТСЯ LAYOUT. Первая версия анимировала масштаб через
+ * graphicsLayer на самом Box. Нажатие сдвигало кнопку, а вместе с ней
+ * приподнимался и «Топ игроков» — интерфейс дёргался. Здесь масштабируется
+ * только содержимое (подпись и блик), а рамка остаётся неподвижной: её
+ * размер задаётся Modifier, и она не участвует в анимации.
+ *
+ * НАЖАТИЕ. Кадр при нажатии — мгновенное затемнение фона без смещения.
+ * Пружинного возврата нет: на быстрых тапах он читался как дрожание.
  */
 @Composable
-private fun TapButton(onClick: () -> Unit) {
+private fun TapButton(onClick: () -> Unit, enabled: Boolean) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
 
-    // Медленная пульсация в покое: -1..1, период 1.4 с.
-    val idle = rememberInfiniteTransition(label = "tapIdle")
-    val pulseBy = idle.animateFloat(
-        initialValue = -1f,
+    // Пульсация только цветом рамки: масштаб и высота не трогаются, поэтому
+    // соседние элементы не сдвигаются. Период 1.6 с — достаточно медленно,
+    // чтобы не мешать игре и не отвлекать от счётчика.
+    val glow = rememberInfiniteTransition(label = "tapGlow")
+    val glowValue by glow.animateFloat(
+        initialValue = 0.5f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = LinearEasing),
+            animation = tween(1600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
-        label = "tapIdlePhase",
+        label = "tapGlowValue",
     )
 
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .graphicsLayer {
-                val breathe = 1f + pulseBy.value * 0.012f
-                val squeeze = if (pressed) 0.955f else 1f
-                scaleX = breathe * squeeze
-                scaleY = breathe * squeeze
-            }
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                // Оттенок слегка «дышит» вместе с масштабом — кнопка
-                // выглядит живой, а не просто мигает текстом.
-                if (pressed) MIET_BLUE.copy(alpha = 0.82f) else MIET_BLUE
-            )
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+    val base = if (pressed) MIET_BLUE else MIET_BLUE.copy(alpha = 0.72f + 0.28f * glowValue)
+
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            GAME_TITLE,
-            fontSize = 19.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(
+                    // Рамка светится по краю, корпус кнопки остаётся ровным.
+                    Brush.linearGradient(
+                        listOf(
+                            MIET_BLUE.copy(alpha = 0.35f * glowValue),
+                            MIET_BLUE.copy(alpha = 0.08f * glowValue),
+                        ),
+                    ),
+                )
+                .padding(3.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(base)
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = enabled,
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Подпись. Сдвиг при нажатии — в пределах кнопки, поэтому
+            // содержимое страницы не двигается.
+            Text(
+                text = GAME_TITLE,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.graphicsLayer {
+                    translationY = if (pressed) 1f else 0f
+                    alpha = if (pressed) 0.85f else 1f
+                },
+            )
+        }
     }
 }
 

@@ -213,6 +213,45 @@ object ChipTop {
             }
         }
 
+    /**
+     * Сбросить результат игрока.
+     *
+     * Вызывается при смене имени: новое имя означает нового игрока, поэтому
+     * старая строка удаляется и счёт начинается с нуля. Раньше при смене
+     * ника отправлялся счёт 0, скрипт его отклонял, а старая строка
+     * оставалась — человек переименовывался, набирал очки и оставался в
+     * таблице под прежним именем, не находя себя.
+     *
+     * Отдельный вызов, а не submit с нулевым счётом: нулевой счёт скрипт
+     * отклоняет по правилам, а здесь нужен именно сброс.
+     */
+    suspend fun reset(nick: String, install: String): SubmitResult =
+        withContext(Dispatchers.IO) {
+            val clean = nick.trim().replace(Regex("\\s+"), " ")
+            if (clean.isEmpty()) return@withContext SubmitResult.Rejected("Ник не может быть пустым")
+            if (clean.length > NICK_MAX) {
+                return@withContext SubmitResult.Rejected("Ник длиннее $NICK_MAX символов")
+            }
+            val target = url(ENDPOINT).newBuilder()
+                .addQueryParameter("nick", clean)
+                .addQueryParameter("reset", "1")
+                .addQueryParameter("install", install)
+                .build() ?: return@withContext SubmitResult.NoNetwork
+
+            runCatching {
+                val request = Request.Builder().url(target).get().build()
+                client.newCall(request).execute().use { resp ->
+                    val body = resp.body?.string().orEmpty()
+                    Log.i(TAG, "Сброс результата: HTTP ${resp.code} ${body.take(200)}")
+                    if (!resp.isSuccessful) return@use SubmitResult.NoNetwork
+                    parseSubmit(body)
+                }
+            }.getOrElse {
+                Log.w(TAG, "Сброс результата не удался", it)
+                SubmitResult.NoNetwork
+            }
+        }
+
     /** Разобрать ответ чтения топа. */
     internal fun parseTop(body: String): Top? {
         val root = runCatching { JsonParser.parseString(body) }.getOrNull() ?: return null

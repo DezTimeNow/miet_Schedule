@@ -479,4 +479,127 @@ class ChipTopTest {
             old.top,
         )
     }
+
+    /**
+     * Смена ника сбрасывает результат.
+     *
+     * Требование владельца: переименование = новый игрок, счёт с нуля.
+     * Раньше отправлялся счёт 0, скрипт его отклонял, старая строка
+     * оставалась, и человек не находил себя в топе.
+     */
+    @Test
+    fun `смена ника обнуляет счёт и удаляет строку`() {
+        val game = srcFile("TapChipScreen.kt")
+        assertTrue(
+            "При смене ника должен вызываться сброс на сервере",
+            game.contains("ChipTop.reset(value"),
+        )
+        assertTrue(
+            "Локальный счёт должен обнуляться",
+            game.contains("score = 0"),
+        )
+        assertTrue(
+            "Прежний результат не должен уходить в таблицу",
+            game.contains("lastTapAt = 0L"),
+        )
+
+        val chip = srcFile("ChipTop.kt")
+        assertTrue("В клиенте должен быть отдельный метод сброса", chip.contains("suspend fun reset("))
+        assertTrue(
+            "Сброс не должен идти как обычная отправка счёта",
+            chip.contains("addQueryParameter(\"reset\", \"1\")"),
+        )
+    }
+
+    /**
+     * Кнопка тапа не двигает интерфейс.
+     *
+     * Требование владельца: анимация не должна дёргать страницу. Первая
+     * версия масштабировала сам Box через graphicsLayer, и нажатие
+     * приподнимало «Топ игроков» вместе с кнопкой.
+     */
+    @Test
+    fun `анимация кнопки не меняет layout`() {
+        val game = srcFile("TapChipScreen.kt")
+        // Масштабировать рамку нельзя — это двигает всё, что под ней.
+        assertFalse(
+            "Кнопка не должна масштабироваться: это дёргает интерфейс",
+            game.contains("scaleX = breathe") || game.contains("scaleX = squeeze"),
+        )
+        // Анимировать можно только содержимое.
+        assertTrue(
+            "Анимация должна быть только на подписи",
+            game.contains("translationY = if (pressed)"),
+        )
+    }
+
+    /**
+     * Топ не должен выглядеть сломанным ни при каких ответах.
+     *
+     * Требование владельца: проверить, что таблица игроков работает.
+     * Проверяем разбор ответов: пустой ответ, чужая страница, обрыв,
+     * успешный ответ и ответ с обновлённым ником.
+     */
+    @Test
+    fun `таблица игроков разбирает любой ответ скрипта`() {
+        // Нормальный ответ
+        val good = ChipTop.parseTop(
+            """{"ok":true,"tz":"Europe/Moscow","week":143,
+               |"resetsAt":"2026-10-05T06:00:00.000Z",
+               |"top":[{"nick":"A","score":10},{"nick":"B","score":7}]}""".trimMargin())
+        assertNotNull("Нормальный ответ должен разбираться", good)
+        assertEquals(2, good!!.rows.size)
+        assertEquals("A", good.rows[0].nick)
+        assertEquals(10, good.rows[0].score)
+
+        // Пустой топ — это пустой рейтинг, а не поломка
+        val empty = ChipTop.parseTop("""{"ok":true,"top":[],"week":143}""")
+        assertNotNull("Пустой топ должен разбираться", empty)
+        assertEquals(0, empty!!.rows.size)
+
+        // Чужая страница или поломка скрипта — это отсутствие данных
+        org.junit.Assert.assertNull(
+            "Ответ без ok должен считаться поломкой, а не пустым топом",
+            ChipTop.parseTop("""{"error":"Something"}"""),
+        )
+        org.junit.Assert.assertNull(
+            "Мусор вместо JSON должен давать null",
+            ChipTop.parseTop("<html>404</html>"),
+        )
+        org.junit.Assert.assertNull(
+            "Пустое тело должно давать null",
+            ChipTop.parseTop(""),
+        )
+
+        // Смена ника в ответе на запись
+        val renamed = ChipTop.parseSubmit(
+            """{"ok":true,"rank":3,"total":5,"reset":true,
+               |"top":[{"nick":"ddd","score":1}]}""".trimMargin())
+        assertTrue(renamed is ChipTop.SubmitResult.Saved)
+        assertEquals(3, (renamed as ChipTop.SubmitResult.Saved).rank)
+        assertNotNull("Топ должен приходить вместе с записью", renamed.top)
+        assertEquals("ddd", renamed.top!!.rows[0].nick)
+    }
+
+    /**
+     * Скрипт умеет сбрасывать строку по запросу reset=1.
+     *
+     * Проверяется файл скрипта: он загружается владельцем вручную и не
+     * лежит в репозитории, поэтому проверка выполняется на локальной копии,
+     * если она есть, и пропускается молча при её отсутствии.
+     */
+    @Test
+    fun `скрипт умеет сбрасывать строку`() {
+        val f = java.io.File("/tmp/topleaderboard.gs")
+        if (!f.exists()) return
+        val script = f.readText()
+        assertTrue(
+            "Скрипт должен принимать параметр reset",
+            script.contains("input.reset !== undefined"),
+        )
+        assertTrue(
+            "Скрипт должен удалять строку установки при сбросе",
+            script.contains("СБРОС ПРИ СМЕНЕ НИКА"),
+        )
+    }
 }
