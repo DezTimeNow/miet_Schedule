@@ -1674,4 +1674,108 @@ class ChipTopTest {
         )
         assertEquals("Kran", nick)
     }
+
+    /**
+     * Смена ника не должна давать новому нику чужой счёт и чужое место.
+     *
+     * Требование владельца: «поменял ник на новый — должен быть с 0 очков
+     * и в самом низу». Поток синхронизации реагирует и на смену ника, а
+     * счёт в этот момент ещё от прежнего игрока. Без проверки отправка
+     * уходила под новым ником со старым счётом: новый ник тут же получал
+     * чужое место, хотя его в таблице не было.
+     */
+    @Test
+    fun `смена ника не отправляет прежний счёт под новым именем`() {
+        val game = srcFile("TapChipScreen.kt")
+
+        // Отправка отсекается, пока база не выставлена для этого ника.
+        assertTrue(
+            "под новым ником нельзя отправлять счёт прежнего игрока",
+            game.contains("if (baseForNick != name) return@collect")
+        )
+        // Проверка обязана стоять ДО отправки, иначе она ничего не спасает.
+        val guardAt = game.indexOf("if (baseForNick != name) return@collect")
+        val sendAt = game.indexOf("ChipTop.submit(name, current")
+        assertTrue("проверка должна стоять до отправки", guardAt in 1 until sendAt)
+
+        // При смене ника место обнуляется: прежнее получено для другого
+        // имени и к новому отношения не имеет.
+        val renameBranch = game.substringAfter("if (baseForNick != name) {")
+            .substringBefore("return@LaunchedEffect")
+        assertTrue(
+            "при смене ника место должно сбрасываться",
+            renameBranch.contains("rank = 0")
+        )
+    }
+
+    /**
+     * Счёт нового ника выставляется из его строки, а не из прежней.
+     *
+     * Отдельно от предыдущего: если новый ник в таблице отсутствует,
+     * known равен нулю, и счёт должен стать нулём — то есть новый игрок
+     * начинает с чистого листа, а не продолжает чужой результат.
+     */
+    @Test
+    fun `новый ник без строки в таблице начинает с нуля`() {
+        val game = srcFile("TapChipScreen.kt")
+
+        // Значение строки топа для нового ника — единственный источник базы.
+        assertTrue(
+            "база должна браться из строки топа по нику",
+            game.contains("top?.rows?.firstOrNull { it.nick == name }?.score ?: 0")
+        )
+        // Оба значения выставляются РОВНО в known, без «только вверх»:
+        // новый ник с 21 очками должен продолжить с 21, а не с 44.
+        val branch = game.substringAfter("if (baseForNick != name) {")
+            .substringBefore("return@LaunchedEffect")
+        assertTrue(
+            "база выставляется ровно в значение строки",
+            branch.contains("baseScore = known")
+        )
+        assertTrue(
+            "счёт выставляется ровно в значение строки",
+            branch.contains("score = known")
+        )
+        // Ветка «тот же ник, обновился топ» остаётся только на рост.
+        assertTrue(
+            "при обновлении топа счёт подтягивается только вверх",
+            game.contains("if (known > baseScore)")
+        )
+    }
+
+
+    /**
+     * Ответ по прежнему нику не должен приклеиваться к новому.
+     *
+     * Гонка: пока запрос висел в сети, игрок меняет ник. Ответ приходит уже
+     * на новое имя — и без проверки его счёт, место и отказ относятся к
+     * нику, который никогда ничего не отправлял. Именно это давало «место 2»
+     * сразу после смены имени на новый ник.
+     */
+    @Test
+    fun `ответ по прежнему нику игнорируется после смены имени`() {
+        val game = srcFile("TapChipScreen.kt")
+
+        // Проверка стоит в ветке успешной записи — до применения счёта.
+        val saved = game.substringAfter("is ChipTop.SubmitResult.Saved -> {")
+            .substringBefore("is ChipTop.SubmitResult.Rejected")
+        assertTrue(
+            "ответ по устаревшему нику должен отбрасываться",
+            saved.contains("if (nick.trim() != name) return@collect")
+        )
+        // Отказ по старому нику не должен висеть на новом.
+        val rejected = game.substringAfter("is ChipTop.SubmitResult.Rejected -> {")
+            .substringBefore("is ChipTop.SubmitResult.NoNetwork")
+        assertTrue(
+            "отказ должен записываться только для текущего ника",
+            rejected.contains("if (nick.trim() == name)")
+        )
+        val noNet = game.substringAfter("is ChipTop.SubmitResult.NoNetwork -> {")
+            .substringBefore("} finally")
+        assertTrue(
+            "сообщение о сети должно записываться только для текущего ника",
+            noNet.contains("if (nick.trim() == name)")
+        )
+    }
+
 }
