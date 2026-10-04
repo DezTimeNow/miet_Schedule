@@ -766,7 +766,7 @@ class ChipTopTest {
 
         assertTrue(
             "Счётчик должен использовать актуальный адрес скрипта",
-            counter.contains("AKfycbwBy-_5ev4yVs9Fqg9MTRvkLaSnWK1RDqrlICaTsQggAsEm1mojVCAFi8uqDvHpjtkx"),
+            counter.contains("AKfycbxA2YgoPtiHv3pHyMgUDQeKWhz6kaV9p-xYCQmCZFOKBsOKCtRauDJt3TLjEtlkwqRoSg"),
         )
         assertTrue(
             "Устройство передаётся ключом device — так его ждёт скрипт",
@@ -1371,5 +1371,37 @@ class ChipTopTest {
 
         assertEquals("чужой меньший результат не должен обнулять счётчик", 55, score)
         assertEquals(50, base)
+    }
+
+    /**
+     * Игра обязана ходить на скрипт, который отдаёт авторитетный счёт.
+     *
+     * В проекте было три адреса Apps Script: один в игре, другой в
+     * счётчике установок, и новый при развёртывании. Живой проверкой
+     * выяснилось, что адрес в игре не отдавал поле score вообще — то есть
+     * синхронизация очков молча не работала, а приложение выглядело
+     * исправным. Тест держит актуальный адрес, чтобы смена скрипта
+     * снова не прошла незамеченной.
+     */
+    @Test
+    fun `игра обращается к скрипту, отдающему авторитетный счёт`() {
+        val game = srcFile("ChipTop.kt")
+
+        assertTrue(
+            "Игра должна использовать актуальный адрес скрипта",
+            game.contains("AKfycbxA2YgoPtiHv3pHyMgUDQeKWhz6kaV9p-xYCQmCZFOKBsOKCtRauDJt3TLjEtlkwqRoSg"),
+        )
+        assertFalse(
+            "В игре не должно остаться прежних адресов скрипта",
+            game.contains("AKfycbxC02arwREotzw9H"),
+        )
+        assertFalse(
+            "В игре не должно остаться прежнего адреса счётчика",
+            game.contains("AKfycbwBy-_5ev4yVs9"),
+        )
+        assertTrue(
+            "Клиент обязан разбирать поле score из ответа сервера",
+            game.contains("get(\"score\")"),
+        )
     }
 }

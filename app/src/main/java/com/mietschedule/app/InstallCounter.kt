@@ -47,7 +47,7 @@ object InstallCounter {
      * приложение.
      */
     private const val ENDPOINT =
-        "https://script.google.com/macros/s/AKfycbwBy-_5ev4yVs9Fqg9MTRvkLaSnWK1RDqrlICaTsQggAsEm1mojVCAFi8uqDvHpjtkx/exec"
+        "https://script.google.com/macros/s/AKfycbxA2YgoPtiHv3pHyMgUDQeKWhz6kaV9p-xYCQmCZFOKBsOKCtRauDJt3TLjEtlkwqRoSg/exec"
 
     /** Ключи в SharedPreferences. Имя файла не меняем: смена обнулит счёт. */
     private const val PREFS = "chip_install"
