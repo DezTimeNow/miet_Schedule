@@ -61,6 +61,9 @@ import kotlinx.coroutines.Dispatchers
 import java.util.Calendar
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.foundation.layout.PaddingValues
+import kotlinx.coroutines.delay
 
 /** Выбор преподавателя: инициал → ФИО, с поиском и звездами. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -386,6 +389,46 @@ fun AudiencePickerScreen(
         loading = false
     }
 
+// Таблица времени пар нужна фильтру «свободные на данную минуту»:
+    // чтобы понять, какая пара идёт прямо сейчас, нужны часы каждой пары.
+    // На экране аудиторий её нет — расписание выбрано не открыто, поэтому
+    // берём из кэша расписаний. Одна сборка на весь экран: собирать её в
+    // каждом чипе нельзя, это разбор кэша на каждое нажатие.
+    //
+    // Состояние, а не suspend прямо в remember: pairTimesFromCache ходит в
+    // кэш и является suspend-функцией, а remember-блок не suspend. Раньше
+    // здесь стоял withContext внутри remember, и файл не компилировался.
+    var pairTimes by remember { mutableStateOf<List<PairTime>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        val fromCache = withContext(Dispatchers.IO) {
+            runCatching { api.pairTimesFromCache() }.getOrDefault(emptyList())
+        }
+        pairTimes = fromCache
+    }
+    val nowTable = remember(pairTimes) { NowLogic.windowTable(pairTimes) }
+
+    // Тик раз в минуту: «осталось 12 мин» устаревает быстро, а перерисовывать
+    // весь список из-за секунд незачем.
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            now = System.currentTimeMillis()
+        }
+    }
+
+    // Номер пары, идущей сейчас, и слова для подписи.
+    //
+    // Кнопка «Показать свободные» обещает показать аудитории свободные на
+    // ДАННУЮ МИНУТУ, то есть в паре, которая идёт прямо сейчас. Раньше фильтр
+    // считал занятость по всей учебной неделе и по умолчанию брал все пары:
+    // список отсекал комнаты, занятые в паре, которой сегодня нет, и
+    // «свободных» на деле не было.
+    val (nowPairCode, nowPairGoing) = remember(nowTable, now) {
+        NowLogic.pairLabelState(nowTable, now)
+    }
+    val minutesLeft = remember(nowTable, now) { NowLogic.minutesLeft(nowTable, now) }
+
     // Занятые комнаты считаются один раз, а не на каждый элемент списка: иначе
     // каждая строка спрашивала бы расписание заново при прокрутке.
     //
@@ -402,14 +445,21 @@ fun AudiencePickerScreen(
     // «Показать свободные» показывала «Сегодня пар нет» в обычный учебный день.
     //
     // Теперь вопрос «есть ли индекс» задаётся напрямую из prefs — он дешёвый
-    // и всегда отвечает на текущее состояние диска, без гонки с загрузкой.
-    val busyKeys = remember(pairNo, showFree, todayDay, weekRow) {
+    // и всегда отвечает на текуное состояние диска, без гонки с загрузкой.
+    //
+    // Какую пару смотрим: выбранную вручную, иначе ту, что идёт сейчас.
+    // Вручную приоритетнее — человек выбрал конкретную пару, чтобы заранее
+    // посмотреть, и перебивать его текущим временем нельзя.
+    val activePair = pairNo.toIntOrNull() ?: if (showFree) nowPairCode else null
+    val busyKeys = remember(activePair, showFree, todayDay, weekRow) {
         if (!showFree) emptySet()
-        else api.busyRoomsCached(todayDay, weekRow, pairNo.toIntOrNull()) ?: emptySet()
+        else api.busyRoomsCached(todayDay, weekRow, activePair) ?: emptySet()
     }
 
-    // В выходной и в дни без пар фильтр «свободные» даёт ВСЕ аудитории. Формально
-    // верно, но человек читает «221 аудитория свободно» как «все комнаты пусты».
+    // Фильтр «свободные» без выбранной пары и без идущей пары даёт ВСЕ
+    // аудитории. Формально верно, но человек читает «221 аудитория свободно»
+    // как «все комнаты пусты». Различаем два случая: пар сегодня вообще нет
+    // (выходной) и пары есть, но сейчас не время пары.
     val noLessonsToday = remember(todayDay, weekRow) {
         api.busyRoomsCached(todayDay, weekRow, null).isNullOrEmpty()
     }
@@ -446,10 +496,14 @@ fun AudiencePickerScreen(
                 title = "Аудитория",
                 subtitle = when {
                     list.isEmpty() -> "Загрузка…"
+                    // Фильтр включён, но пар сегодня нет: писать «свободно» было
+                    // бы ложью — свободны все, потому что не занята ни одна.
                     showFree && noLessonsToday -> "Сегодня пар нет"
                     showFree -> {
                         val free = list.count { roomKey(it.name) !in busyKeys }
-                        "$free свободно"
+                        val pair = activePair
+                        if (pair == null) "$free свободно сейчас"
+                        else "$free свободно на паре $pair"
                     }
                     else -> "${list.size} " + plural(list.size, "аудитория", "аудитории", "аудиторий")
                 },
@@ -512,6 +566,15 @@ fun AudiencePickerScreen(
             //
             // Занятость считается по номеру пары, поэтому его надо уметь задать:
             // в 12:00 и в 15:00 список свободных разный. Пусто — «вся пара недели».
+            //
+            // ЧИПЫ В ПРОКРУЧИВАЕМОЙ СТРОКЕ, а не в обычной.
+            //
+            // Жалоба владельца: в вертикальном положении телефона пар было не
+            // видно дальше четвёртой. Причина не в данных, а в вёрстке: чипы
+            // лежали в Row, который шире экрана не бывает, поэтому всё, что не
+            // поместилось, просто обрезалось краем — и выбрать пару 5 или 6
+            // было физически нечем. LazyRow прокручивается, и все пары под
+            // рукой независимо от ширины телефона.
             if (showFree) {
                 val codes = remember(todayDay, weekRow) {
                     // Номера пар берём из индекса занятости, а не из кэша
@@ -520,33 +583,55 @@ fun AudiencePickerScreen(
                     // нет, сервер отдаёт нули), в фильтре он только мешал.
                     api.pairCodesCached(todayDay, weekRow) ?: emptyList()
                 }
-                Row(
-                    Modifier.fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Занято на паре",
-                        fontSize = 12.sp,
-                        color = LocalAppColors.current.muted,
-                        modifier = Modifier.width(96.dp),
-                    )
-                    codes.take(6).forEach { code ->
-                        FilterChip(
-                            modifier = Modifier.padding(end = 6.dp),
-                            selected = pairNo == code.toString(),
-                            onClick = {
-                                pairNo = if (pairNo == code.toString()) "" else code.toString()
-                            },
-                            label = { Text("$code", fontSize = 12.sp) },
-                        )
-                    }
-                    if (codes.size > 6) {
+                // Фильтр работает по конкретной паре, а не по всей неделе.
+                // Чипы подписаны временем: «09:40» полезнее, чем «2» — по
+                // номеру человек угадывает, а по времени видит сразу.
+                Column(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(
-                            "…${codes.size}",
-                            fontSize = 11.sp,
+                            pairChipsTitle(
+                                selectedPair = pairNo.toIntOrNull(),
+                                nowPair = nowPairCode,
+                                nowPairGoing = nowPairGoing,
+                                minutesLeft = minutesLeft,
+                            ),
+                            fontSize = 12.sp,
                             color = LocalAppColors.current.muted,
+                            modifier = Modifier.weight(1f),
                         )
+                        // Сброс на «вся неделя» стоит здесь же: без него
+                        // выбранную пару нельзя отменить, кроме как повторным
+                        // нажатием на тот же чип, о котором человек мог и не
+                        // помнить.
+                        if (pairNo.isNotEmpty()) {
+                            TextButton(
+                                onClick = { pairNo = "" },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            ) {
+                                Text("Вся неделя", fontSize = 11.sp, color = MIET_BLUE)
+                            }
+                        }
+                    }
+                    if (codes.isNotEmpty()) {
+                        LazyRow(
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(codes, key = { "pair$it" }) { code ->
+                                FilterChip(
+                                    selected = pairNo == code.toString(),
+                                    onClick = {
+                                        pairNo = if (pairNo == code.toString()) "" else code.toString()
+                                    },
+                                    label = {
+                                        Text(pairChipLabel(code, pairTimes), fontSize = 12.sp, maxLines = 1)
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -626,6 +711,44 @@ fun AudiencePickerScreen(
             }
         }
     }
+}
+
+/**
+ * Подпись строки фильтра пар: что именно покажет список.
+ *
+ * Человек должен понимать смысл нажатой кнопки, не читая код. Различаем
+ * четыре случая, иначе подпись врёт:
+ *  - пара выбрана вручную: «свободно на выбранной паре»;
+ *  - идёт пара сейчас: «свободно сейчас» и сколько до конца;
+ *  - перерыв: «сейчас перерыв, свободно на следующей паре»;
+ *  - ни то ни другое: не время пар, все комнаты свободны формально.
+ */
+internal fun pairChipsTitle(
+    selectedPair: Int?,
+    nowPair: Int,
+    nowPairGoing: Boolean,
+    minutesLeft: Int?,
+): String = when {
+    selectedPair != null -> "Занято на паре $selectedPair"
+    nowPairGoing && minutesLeft != null -> "Сейчас идёт пара $nowPair, осталось $minutesLeft мин"
+    nowPairGoing -> "Сейчас идёт пара $nowPair"
+    nowPair > 0 -> "Перерыв — свободно на паре $nowPair"
+    else -> "Занято на паре"
+}
+
+/**
+ * Подпись чипа пары: время, а не номер.
+ *
+ * «2» мало о чём говорит, «09:40» отвечает сразу — человек, который ищет
+ * комнату, смотрит на часы, а не считает пары. Если времени у номера нет,
+ * остаётся номер: подпись хуже, но информация не потеряна.
+ */
+internal fun pairChipLabel(code: Int, times: List<PairTime>): String {
+    val hm = times.firstOrNull { it.code == code }?.timeFrom
+    val parsed = NextLessonLogic.parseHhMm(hm)
+    return if (parsed != null) {
+        String.format(java.util.Locale.US, "%02d:%02d", parsed[0], parsed[1])
+    } else "$code"
 }
 
 /**

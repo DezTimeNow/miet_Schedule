@@ -40,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.unit.sp
 
@@ -71,6 +73,13 @@ internal const val GAME_TAGLINE = "мини-игра"
 fun RolePickerScreen(
     current: Role?,
     onPick: (Role) -> Unit,
+    // Блок «сейчас и дальше» в главном меню. Данные для него берутся из
+    // избранного, поэтому нужны те же API и хранилище, что и у расписания.
+    // onOpenFavorite открывает расписание нажатой строки: роль и значение
+    // приходят из избранного, а не из текущего выбора.
+    api: MietApi? = null,
+    prefs: GroupPrefs? = null,
+    onOpenFavorite: (Role, String) -> Unit = { _, _ -> },
     onBack: (() -> Unit)? = null,
     onRefresh: () -> Unit = {},
     onChangeRole: () -> Unit = {},
@@ -108,8 +117,25 @@ fun RolePickerScreen(
         }
     ) { pad ->
         Column(
-            Modifier.padding(pad).fillMaxSize().padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.Center
+            // Прокрутка обязательна: с блоком «сейчас и дальше» над кнопками
+            // содержимое перестало помещаться в экран. Без неё нижние кнопки
+            // — «Избранное», «Настройки», «О программе» — уезжали за край и
+            // были недоступны: экран их просто не показывал.
+            //
+            // fillMaxSize здесь не ставится намеренно: в прокручиваемой колонке
+            // он растягивает её до бесконечности и обрезает содержимое.
+            // Пусть колонка занимает столько высоты, сколько нужно, а
+            // Arrangement.Top прижимает её к верху, когда пар нет.
+            //
+            // Прежде блок был по центру (Center), и пустое место делилось поровну.
+            // Теперь сверху: человек открывает меню, чтобы прочитать блок, и он
+            // обязан быть на первом экране, а не на середине под пустотой.
+            Modifier
+                .padding(pad)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.Top
         ) {
             // Прогресс обновления: обновляются все 344 группы — это ~35 секунд.
             // Без этой строки ожидание выглядит как зависшее приложение.
@@ -119,6 +145,26 @@ fun RolePickerScreen(
                     fontSize = 12.sp,
                     color = MIET_BLUE,
                     modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp)
+                )
+            }
+            // ───── «СЕЙЧАС И ДАЛЬШЕ» ─────
+            //
+            // Требование владельца: видеть текущую и следующую пару в самом
+            // главном меню, над кнопками «Студент / Преподаватель / Аудитория»,
+            // при условии что группа добавлена в избранное. Раньше этот блок
+            // стоял только внутри экрана расписания, то есть увидеть его можно
+            // было лишь после выбора группы.
+            //
+            // Стоит ПЕРЕД списком ролей: человек открывает приложение, чтобы
+            // узнать «что сейчас», и ответ обязан быть на первом экране, а не
+            // после тапа по своей карточке.
+            // Блок рисуется только когда есть чем его наполнить: без API или
+            // хранилища (например, в превью) он молча не появляется.
+            if (api != null && prefs != null) {
+                NextLessonCard(
+                    api = api,
+                    prefs = prefs,
+                    onOpen = onOpenFavorite,
                 )
             }
             if (current != null) {

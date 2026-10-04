@@ -61,18 +61,44 @@ internal fun startScreenFor(hasSavedSelection: Boolean, requestedGroup: Boolean)
 /**
  * Куда ведёт системная кнопка «Назад» и стрелка «‹».
  *
- * Один источник правды для всех пяти экранов. Раньше одна и та же логика
+ * Один источник правды для всех экранов. Раньше одна и та же логика
  * была продублирована в BackHandler, в переходах из «Избранного» и из
- * «О программе», и в двух местах ветвились по-разному: пустой выбор
+ * «О программе», и в двух местах ветвилась по-разному: пустой выбор
  * приводил к падению на `selection!!` в ветке SCHEDULE.
+ *
+ * Проблема, которую это чинит (жалоба владельца): из «Избранного» открывалось
+ * расписание, а кнопка «Назад» приводила к СПИСКУ ГРУПП, а не в главное меню.
+ * Выглядело так, будто человек вышел из избранного и провалился на другой
+ * экран. Причина — экран расписания не помнил, ОТКУДА его открыли: из
+ * избранного, из своей группы или из другой роли, а [originFromFavorites] эти
+ * три случая различает.
  *
  * @param hasSelection выбрана ли группа/аудитория/преподаватель. На экране
  *   выбора роли она пустая, и оттуда «Назад» означает выход из приложения.
+ * @param origin экран, из которого открыли расписание. Если он не совпадает
+ *   с тем, куда вёл бы наезд по умолчанию, возвращаем именно его: человек
+ *   пришёл оттуда и ждёт вернуться туда. Флаг «из избранного» был для этого
+ *   недостаточен — из блока в главном меню расписание тоже открывается
+ *   «не по списку групп», и назад обязан вести в меню, а не в избранное.
  */
-internal fun backTargetFor(screen: Screen, hasSelection: Boolean): Screen = when (screen) {
+internal fun backTargetFor(
+    screen: Screen,
+    hasSelection: Boolean,
+    origin: Screen? = null,
+): Screen = when (screen) {
     Screen.PICK_ENTITY -> Screen.PICK_ROLE
-    Screen.SCHEDULE -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
-    Screen.FAVORITES -> if (hasSelection) Screen.SCHEDULE else Screen.PICK_ROLE
+    Screen.SCHEDULE -> when {
+        // Пришли не из списка сущностей — возвращаем туда, откуда пришли.
+        origin != null && origin != Screen.SCHEDULE -> origin
+        hasSelection -> Screen.PICK_ENTITY
+        else -> Screen.PICK_ROLE
+    }
+    // Из «Избранного» назад — в главное меню, где стоит кнопка «Избранное».
+    // Раньше здесь стояло `if (hasSelection) SCHEDULE`, то есть при сохранённой
+    // группе назад уводил на расписание: человек уходил из избранного по
+    // направлению стрелки, а попадал на экран, из которого в избранное и
+    // пришли. Отмечено как нелогичное поведение.
+    Screen.FAVORITES -> Screen.PICK_ROLE
     Screen.SETTINGS -> Screen.PICK_ROLE
     Screen.ABOUT -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
     // Отчёт открывается только из «О программе», поэтому назад — туда же
@@ -205,6 +231,18 @@ fun AppRoot(
     var screen by rememberSaveable(stateSaver = ScreenSaver) {
         mutableStateOf(startScreenFor(prefs.load() != null, requestedGroup != null))
     }
+    // Откуда открыли расписание — экран, в который ведёт «Назад».
+    //
+    // Одного флага «из избранного» мало: из избранного назад ведёт в
+    // избранное, а из блока «сейчас и дальше» в главном меню — в меню. Оба
+    // перехода выглядят снаружи одинаково (строка с названием группы), но
+    // возвращать надо туда, откуда человек ушёл.
+    //
+    // rememberSaveable, а не remember: при повороте экрана происхождение
+    // не должно теряться, иначе после поворота назад снова уводит не туда.
+    var scheduleOrigin by rememberSaveable(stateSaver = ScreenSaver) {
+        mutableStateOf(Screen.PICK_ENTITY)
+    }
     // СИСТЕМНАЯ КНОПКА «НАЗАД». Проверено на эмуляторе: без этого перехвата
     // Android завершал Activity на всех пяти экранах (focus уходил на launcher),
     // потому что она была корнем стека. На экранах выбора группы и роли
@@ -212,7 +250,7 @@ fun AppRoot(
     // вернуться было нечем. Здесь те же переходы, что и у стрелки «‹».
     // На экране роли перехват выключен: там назад — выход из приложения.
     BackHandler(enabled = screen != Screen.PICK_ROLE) {
-        screen = backTargetFor(screen, selection != null)
+        screen = backTargetFor(screen, selection != null, scheduleOrigin)
     }
     // Кнопка «Обновить» есть на всех экранах, поэтому состояние живёт здесь и
     // передаётся вниз — иначе каждый экран вёл бы свой счётчик.
@@ -239,6 +277,44 @@ fun AppRoot(
     // Прогресс обновления, чтобы «30 секунд крутит» не выглядели зависанием.
     var refreshNote by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    /**
+     * Открыть расписание по строке блока «сейчас и дальше» в главном меню.
+     *
+     * Переход тот же, что из «Избранного»: восстанавливается роль, значение и
+     * ключ поиска (ФИО для преподавателя, код и имя для аудитории). Без этого
+     * строка показывала бы пару, но нажатие на неё приводило бы к пустому
+     * расписанию — «Не удалось определить аудиторию».
+     *
+     * Происхождение помечается как «из избранного»: блок живёт в главном
+     * меню, и назад с расписания должно вести в меню, а не в список групп.
+     */
+    fun openFromMenu(r: Role, value: String) {
+        prefs.saveRole(r)
+        role = r
+        selection = value
+        when (r) {
+            Role.STUDENT -> {
+                teacherCode = ""
+                roomNameArg = ""
+            }
+            Role.TEACHER -> {
+                teacherCode = TeacherIndex.key(value)
+                roomNameArg = ""
+            }
+            Role.AUDIENCE -> {
+                roomNameArg = value
+                teacherCode = api.audienceCodeByName(value)?.toString().orEmpty()
+            }
+        }
+        prefs.saveFor(r, value)
+        // Блок живёт в главном меню, поэтому «Назад» с открытого расписания
+        // обязан вести в меню. Без этой метки происхождение оставалось от
+        // предыдущего перехода, и назад уводил в список групп — то есть
+        // человек выходил из блока в другое место, а не туда, откуда вошёл.
+        scheduleOrigin = Screen.PICK_ROLE
+        screen = Screen.SCHEDULE
+    }
 
     // ВОССТАНОВЛЕНИЕ КЛЮЧА РОЛИ ПРИ ХОЛОДНОМ СТАРТЕ.
     //
@@ -433,6 +509,9 @@ fun AppRoot(
     when (screen) {
         Screen.PICK_ROLE -> RolePickerScreen(
             current = if (prefs.load() != null) role else null,
+            api = api,
+            prefs = prefs,
+            onOpenFavorite = { r, value -> openFromMenu(r, value) },
             onRefresh = { refreshCurrent() },
             onChangeRole = { screen = Screen.PICK_ROLE },
             refreshNote = refreshNote,
@@ -462,6 +541,7 @@ fun AppRoot(
                         // заново. Преподаватель и аудитория здесь сохраняют
                         // своё значение — студент не сохранял ничего.
                         prefs.save(chosen)
+                        scheduleOrigin = Screen.PICK_ENTITY
                         screen = Screen.SCHEDULE
                     },
                     onSwitchRole = { screen = Screen.PICK_ROLE },
@@ -478,6 +558,7 @@ fun AppRoot(
                         // исходное: в избранном нужно видеть «Лупин Сергей Сергеевич»,
                         // а не внутренний ключ в нижнем регистре.
                         prefs.save(name)
+                        scheduleOrigin = Screen.PICK_ENTITY
                         screen = Screen.SCHEDULE
                     },
                     onBack = { screen = Screen.PICK_ROLE },
@@ -502,6 +583,7 @@ fun AppRoot(
                         // id 234), и по коду расписание находилось не полностью.
                         roomNameArg = name
                         prefs.save(name)
+                        scheduleOrigin = Screen.PICK_ENTITY
                         screen = Screen.SCHEDULE
                     },
                     onBack = { screen = Screen.PICK_ROLE },
@@ -607,8 +689,18 @@ Screen.FAVORITES -> FavoritesScreen(
                     }
                 }
                 prefs.saveFor(r, selection ?: "")
+                // Помечаем происхождение: с этого момента «Назад» на экране
+                // расписания возвращает в «Избранное», а не в список групп.
+                scheduleOrigin = Screen.FAVORITES
                 screen = Screen.SCHEDULE
             },
+            // Назад из избранного идёт через общий backTargetFor, а не
+            // отдельной строкой: раньше здесь стояло
+            // `backTargetFor(Screen.FAVORITES, selection != null)`, и при
+            // сохранённой группе это давало SCHEDULE — то есть назад уводил
+            // на расписание, вперёд оттуда, откуда в избранное пришли.
+            // Теперь сам backTargetFor для FAVORITES отдаёт PICK_ROLE, и
+            // отдельная ветка была бы второй копией того же правила.
             onBack = { screen = backTargetFor(Screen.FAVORITES, selection != null) },
             onRefresh = { refreshCurrent() },
             onChangeRole = { screen = Screen.PICK_ROLE },
@@ -635,7 +727,15 @@ Screen.FAVORITES -> FavoritesScreen(
             // экране расписания оставалась активной и нажималась повторно,
             // начиная второй круг обхода поверх первого.
             refreshingAll = refreshing,
-            onChangeEntity = { screen = Screen.PICK_ENTITY },
+            // Стрелка «‹» в шапке расписания идёт через тот же backTargetFor, что и
+            // системная кнопка «Назад». Раньше здесь стояло
+            // `{ screen = Screen.PICK_ENTITY }` — то есть стрелка всегда вела
+            // в список групп, даже когда расписание открыли из избранного или
+            // из блока «сейчас и дальше» в главном меню. Отмечено владельцем
+            // как нелогичное: назад приводит не туда, откуда вошёл.
+            onChangeEntity = {
+                screen = backTargetFor(Screen.SCHEDULE, selection != null, scheduleOrigin)
+            },
             // Из избранного аудитория открывается по имени (value), а код
             // неизвестен — фильтр кэша отработает по имени, это верно.
             onChangeRole = { screen = Screen.PICK_ROLE },

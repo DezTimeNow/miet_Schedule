@@ -450,6 +450,40 @@ internal fun roomLessonKey(l: Lesson): String =
     }
 
     /**
+     * Пары одной избранной сущности ИЗ КЭША — без сети.
+     *
+     * Нужна блоку «сейчас и дальше» в главном меню: он стоит на первом экране и
+     * обязан появиться мгновенно, а сеть на первом экране запускать нельзя.
+     *
+     * Роль решает источник, и разница существенная:
+     *  - студент — его расписание лежит в кэше по имени группы;
+     *  - преподаватель — расписания на сайте нет, пары собираются из кэша всех
+     *    групп (TeacherIndex), это медленно, поэтому берём только избранных;
+     *  - аудитория — то же самое: пары комнаты разбросаны по расписаниям групп.
+     *
+     * Пустой результат означает «в кэше нет», а не «пар нет»: вызывающий код
+     * показывает блок только при непустом списке, иначе человек увидел бы
+     * «пар нет» там, где на самом деле просто ещё не открывал расписание.
+     */
+    suspend fun cachedLessonsOf(role: Role, value: String): List<Lesson> = when (role) {
+        Role.STUDENT -> {
+            val raw = cachedSchedule(value)
+            if (raw.isNullOrBlank()) emptyList()
+            else runCatching {
+                GsonHolder.gson.fromJson(raw, ScheduleResponse::class.java)?.data
+            }.getOrNull() ?: emptyList()
+        }
+        Role.TEACHER -> runCatching {
+            TeacherIndex.lessonsOf(this, cachedGroups(), TeacherIndex.key(value))
+        }.getOrDefault(emptyList())
+        Role.AUDIENCE -> {
+            val code = audienceCodeByName(value)
+            if (code == null) emptyList()
+            else runCatching { localLessonsOf(cachedGroups(), code, value) }.getOrDefault(emptyList())
+        }
+    }
+
+    /**
      * Все пары из кэша расписаний — ОДИН проход по диску.
      *
      * Отдельная функция, потому что список аудиторий и занятость нужны из
@@ -542,6 +576,34 @@ internal fun roomLessonKey(l: Lesson): String =
             p[2].toIntOrNull()?.let { out.add(it) }
         }
         return out.toList()
+    }
+
+    /**
+     * Таблица времени пар из кэша расписаний.
+     *
+     * Нужна экрану выбора аудитории: фильтр «Показать свободные» обещает
+     * показать комнаты свободные на ДАННУЮ МИНУТУ, а для этого надо знать,
+     * какая пара идёт прямо сейчас. На этом экране расписание не открыто,
+     * поэтому таблица времени нигде в поле зрения — берём из кэша.
+     *
+     * Собирается из первых попавшихся расписаний: время пары у всех групп
+     * одинаковое (это сетка университета), поэтому одного расписания
+     * достаточно. Полный обход всех 343 групп не нужен и стоил бы секунд
+     * тридцати.
+     */
+    suspend fun pairTimesFromCache(maxGroups: Int = 12): List<PairTime> {
+        val gson = GsonHolder.gson
+        for (g in cachedGroups().take(maxGroups)) {
+            val raw = cachedSchedule(g) ?: continue
+            val data = runCatching {
+                gson.fromJson(raw, ScheduleResponse::class.java)?.data
+            }.getOrNull() ?: continue
+            val times = collectTimes(data)
+            // Пустая таблица у расписания бывает (сервер иногда не отдаёт
+            // Times), поэтому берём первую непустую и идём дальше.
+            if (times.isNotEmpty()) return times
+        }
+        return emptyList()
     }
 
     fun loadAudienceIndex(): String? = prefs.getString(KEY_AUD_IDX, null)

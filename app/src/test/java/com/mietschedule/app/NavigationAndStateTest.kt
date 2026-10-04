@@ -51,14 +51,62 @@ class NavigationAndStateTest {
     }
 
     @Test
-    fun `из избранного с выбором назад ведёт на расписание`() {
-        assertEquals(Screen.SCHEDULE, backTargetFor(Screen.FAVORITES, hasSelection = true))
+    fun `из избранного назад ведёт в главное меню`() {
+            // Исправление жалобы владельца: из избранного назад вёл на расписание
+            // при сохранённой группе, то есть ПО НАПРАВЛЕНИЮ стрелки уводил
+            // вперёд — на тот экран, из которого в избранное и пришли.
+            // Откуда открыли избранное, там и стоит кнопка «Избранное».
+            assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.FAVORITES, hasSelection = true))
     }
 
     @Test
     fun `из избранного без выбора назад ведёт на выбор роли`() {
         // Регрессия: отсюда шли в SCHEDULE при пустом выборе и падали.
         assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.FAVORITES, hasSelection = false))
+    }
+
+    @Test
+    fun `из избранного открытое расписание возвращает назад в избранное`() {
+            // Полный круг: меню → избранное → расписание → назад → избранное.
+            // Без этого расписание помнило только, что группа выбрана, и назад
+            // уводил в список групп, откуда человек в избранное не заходил.
+            assertEquals(
+            Screen.FAVORITES,
+            backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.FAVORITES),
+        )
+    }
+
+    @Test
+    fun `свое расписание возвращает назад на выбор сущности а не в избранное`() {
+        // Происхождение важно: то же расписание, открытое НЕ из избранного,
+        // обязано вести назад по-старому — в выбор группы или аудитории.
+        assertEquals(
+            Screen.PICK_ENTITY,
+            backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.PICK_ENTITY),
+        )
+    }
+
+    @Test
+    fun `расписание открытое из блока меню возвращает назад в меню`() {
+        // Блок «сейчас и дальше» стоит в главном меню, и назад с открытого по
+        // нему расписания обязан вести в меню. Проверено на эмуляторе: раньше
+        // уводило в список групп, потому что стрелка «‹» шла напрямую в
+        // PICK_ENTITY в обход backTargetFor.
+        assertEquals(
+            Screen.PICK_ROLE,
+            backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.PICK_ROLE),
+        )
+    }
+
+    @Test
+    fun `происхождение не мешает обычному переходу`() {
+        // origin == SCHEDULE — вырожденный случай (расписание открыло расписание).
+        // Такого не бывает, но функция не должна уводить на сам экран: иначе
+        // назад зациклился бы на месте.
+        assertEquals(
+            Screen.PICK_ENTITY,
+            backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.SCHEDULE),
+        )
     }
 
     @Test
