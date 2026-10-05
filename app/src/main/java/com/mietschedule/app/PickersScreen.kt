@@ -51,6 +51,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.lazy.LazyRow
@@ -627,7 +632,37 @@ fun AudiencePickerScreen(
                                         pairNo = if (pairNo == code.toString()) "" else code.toString()
                                     },
                                     label = {
-                                        Text(pairChipLabel(code, pairTimes), fontSize = 12.sp, maxLines = 1)
+                                        // Номер и время на одной подписи: номер
+                                        // нужен, чтобы считать пары, время —
+                                        // чтобы знать, когда.
+                                        //
+                                        // ОДНА Text с двумя строками, а не Column
+                                        // из двух Text: Column внутри label
+                                        // FilterChip рисовался, но вторую строку
+                                        // не отдавал — на устройстве была видна
+                                        // только цифра номера. С переносом строки
+                                        // в одном узле обе строки гарантированно
+                                        // попадают на экран.
+                                        val hm = pairChipLabel(code, pairTimes)
+                                        if (hm == code.toString()) {
+                                            // Часов нет — остаётся номер. Не
+                                            // придумываем время: «6» честнее
+                                            // выдуманного «10:00».
+                                            Text("$code", fontSize = 12.sp, maxLines = 1)
+                                        } else {
+                                            Text(
+                                                text = buildAnnotatedString {
+                                                    append("$code\n")
+                                                    withStyle(SpanStyle(fontSize = 9.sp)) {
+                                                        append(hm)
+                                                    }
+                                                },
+                                                fontSize = 12.sp,
+                                                maxLines = 2,
+                                                lineHeight = 13.sp,
+                                                textAlign = TextAlign.Center,
+                                            )
+                                        }
                                     },
                                 )
                             }
@@ -742,6 +777,12 @@ internal fun pairChipsTitle(
  * «2» мало о чём говорит, «09:40» отвечает сразу — человек, который ищет
  * комнату, смотрит на часы, а не считает пары. Если времени у номера нет,
  * остаётся номер: подпись хуже, но информация не потеряна.
+ *
+ * Возврат номера вместо часов — это не украшение, а признак битых данных:
+ * если хоть часть чипов подписана временем, а часть номером, значит таблица
+ * времени собрана не из того источника. Сервер отдаёт полную сетку в поле
+ * Times верхнего уровня ответа, и читать надо его, а не пары (см.
+ * MietApi.pairTimesFromCache).
  */
 internal fun pairChipLabel(code: Int, times: List<PairTime>): String {
     val hm = times.firstOrNull { it.code == code }?.timeFrom

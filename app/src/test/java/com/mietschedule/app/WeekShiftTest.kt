@@ -115,18 +115,38 @@ class WeekShiftTest {
 
     // ── вспомогательное ──
 
-    /** Начало семестра, при котором текущая неделя равна [want]. */
+    /**
+     * Начало семестра, при котором текущая неделя равна [want].
+     *
+     * Считаем от понедельника ТЕКУЩЕЙ недели назад, а не от захардкоженной
+     * даты. [WeekType.current] внутри читает `today()`, поэтому «текущая
+     * неделя» всегда привязана к реальному сегодня — и подставлять дату,
+     * посчитанную от 2026-08-04, можно было только пока сегодня была
+     * «1-й числитель».
+     *
+     * На 5 октября 2026 (понедельник, 9-я неделя семестра) этот расчёт
+     * расходился для всех четырёх вариантов: `current()` давал 1, а не 0, и
+     * проверки «шаг вперёд из 1-й числитель» падали. Тест зависел от даты
+     * запуска и был зелёным только в первую учебную неделю семестра.
+     *
+     * Порядок именно такой: сначала понедельник этой недели, потом typeFor
+     * сдвигает начало семестра назад на [want] недель — тогда текущая неделя
+     * всегда получается ровно [want], независимо от даты.
+     */
     private fun startFor(want: Int): String {
-        val cal = WeekType.parseIso("2026-08-04")!!
-        // Именно минус: WeekType.current() считает (понедельник сегодня −
-        // понедельник начала семестра) в неделях, поэтому неделю want
-        // получаем, ОТСТУПИВ начало семестра назад на неделю.
-        cal.add(java.util.Calendar.DAY_OF_MONTH, -want * 7)
+        val monday = WeekType.parseIso("2000-01-03")!! // ПН
+        monday.timeInMillis = WeekType.today().timeInMillis
+        monday.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        monday.set(java.util.Calendar.MINUTE, 0)
+        monday.set(java.util.Calendar.SECOND, 0)
+        monday.set(java.util.Calendar.MILLISECOND, 0)
+        val offset = (monday.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
+        monday.add(java.util.Calendar.DAY_OF_MONTH, -offset - want * 7)
         return String.format(
             "%04d-%02d-%02d",
-            cal.get(java.util.Calendar.YEAR),
-            cal.get(java.util.Calendar.MONTH) + 1,
-            cal.get(java.util.Calendar.DAY_OF_MONTH)
+            monday.get(java.util.Calendar.YEAR),
+            monday.get(java.util.Calendar.MONTH) + 1,
+            monday.get(java.util.Calendar.DAY_OF_MONTH)
         )
     }
 

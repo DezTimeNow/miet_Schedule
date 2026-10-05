@@ -593,17 +593,32 @@ internal fun roomLessonKey(l: Lesson): String =
      */
     suspend fun pairTimesFromCache(maxGroups: Int = 12): List<PairTime> {
         val gson = GsonHolder.gson
+        var fromLessons: List<PairTime>? = null
         for (g in cachedGroups().take(maxGroups)) {
             val raw = cachedSchedule(g) ?: continue
-            val data = runCatching {
-                gson.fromJson(raw, ScheduleResponse::class.java)?.data
+            val resp = runCatching {
+                gson.fromJson(raw, ScheduleResponse::class.java)
             }.getOrNull() ?: continue
-            val times = collectTimes(data)
-            // Пустая таблица у расписания бывает (сервер иногда не отдаёт
-            // Times), поэтому берём первую непустую и идём дальше.
-            if (times.isNotEmpty()) return times
+
+            // СНАЧАЛА таблица времени из корня ответа. Она полная — 8 пар,
+            // даже если в расписании группы встречаются только пять.
+            //
+            // Именно из-за этого чипы фильтра подписывались смешанно: часть
+            // пар приходила с часами, часть — только номером. Причина в том,
+            // что раньше бралась ТОЛЬКО collectTimes(data) — таблица, собранная
+            // из самих пар, а в парах кодов 6, 7 и 8 у этой группы просто нет.
+            // Сервер отдаёт полную сетку в Times на верхнем уровне, и она
+            // лежит рядом, но не читалась.
+            val rootTimes = resp?.times
+            if (!rootTimes.isNullOrEmpty()) return mergeTimes(rootTimes, emptyList())
+
+            // Запасной путь: таблица из самих пар. Номера там есть, но часов
+            // может не быть — тогда подпись чипа остаётся номером.
+            val inLessons = collectTimes(resp?.data.orEmpty())
+            if (inLessons.isNotEmpty() && fromLessons == null) fromLessons = inLessons
+            if (fromLessons != null) return fromLessons
         }
-        return emptyList()
+        return fromLessons.orEmpty()
     }
 
     fun loadAudienceIndex(): String? = prefs.getString(KEY_AUD_IDX, null)
