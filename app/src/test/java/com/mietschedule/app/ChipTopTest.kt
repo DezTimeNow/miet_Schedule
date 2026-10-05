@@ -336,44 +336,49 @@ class ChipTopTest {
      * защищала бы уже отменённое решение.
      */
     @Test
-    fun `игра стоит простой ссылкой в самом низу меню`() {
-        val menu = srcFile("RolePickerScreen.kt")
-        // Карточки больше нет.
+    fun `игра стоит простой ссылкой в самом низу главной`() {
+        val home = srcFile("HomeScreen.kt")
+        // Карточки больше нет — она занимала место в первом экране.
         assertFalse(
             "Карточка игры удалена: она занимала место в первом экране",
-            Regex("""fun GameCard""").containsMatchIn(menu),
+            Regex("""fun GameCard""").containsMatchIn(home),
         )
         assertFalse(
             "Вызов GameCard должен исчезнуть вместе с карточкой",
-            menu.contains("GameCard("),
+            home.contains("GameCard("),
         )
-        // Ссылка с короткой подписью есть.
         assertTrue(
-            "В меню должна быть ссылка на мини-игру",
-            menu.contains("мини-игра"),
+            "В подменю главной должна быть ссылка на мини-игру",
+            home.contains("GAME_TAGLINE"),
         )
         assertTrue(
             "Ссылка должна звать открытие игры",
-            menu.contains("onOpenChipGame?.invoke()"),
+            home.contains("onOpenChipGame?.invoke()"),
         )
-        // И стоит ПОСЛЕ служебных кнопок: сначала «О программе», потом игра.
-        val aboutIdx = menu.indexOf("Text(\"О программе\"")
-        val gameIdx = menu.indexOf("Text(\"мини-игра\"")
+        // Цвет — как у соседних кнопок. Серая подпись читалась как
+        // отключённая кнопка, хотя игра доступна всегда.
         assertTrue(
-            "Не найдены подписи служебной кнопки и ссылки на игру",
-            aboutIdx > 0 && gameIdx > 0,
+            "Подпись мини-игры должна быть того же цвета, что и соседние кнопки",
+            Regex("""Text\(GAME_TAGLINE, color = MIET_BLUE""").containsMatchIn(home),
+        )
+        // Стоит в одном ряду с «Настройки» и «О программе».
+        val settingsIdx = home.indexOf("Text(\"Настройки\"")
+        val gameIdx = home.indexOf("Text(GAME_TAGLINE")
+        val aboutIdx = home.indexOf("Text(\"О программе\"")
+        assertTrue(
+            "Не найдены подписи кнопок подменю",
+            settingsIdx > 0 && gameIdx > 0 && aboutIdx > 0,
         )
         assertTrue(
-            "Ссылка на мини-игру должна идти после кнопок «Настройки» и " +
-                "«О программе», а не перед ними",
-            gameIdx > aboutIdx,
+            "Мини-игра должна стоять в ряду кнопок, а не до или после него",
+            settingsIdx < gameIdx && gameIdx < aboutIdx,
         )
     }
 
     /** Название игры остаётся константой, хоть карточка и убрана. */
     @Test
     fun `название игры живёт в константе а не строкой в меню`() {
-        val menu = srcFile("RolePickerScreen.kt")
+        val home = srcFile("HomeScreen.kt")
         // Название вынесено в константу: используется в заголовке экрана
         // игры и в описании релиза. Карточка в меню убрана, но константа
         // осталась — иначе экран игры и меню снова разойдутся.
@@ -382,14 +387,14 @@ class ChipTopTest {
         // константы. Правильный признак — литерал встречается ровно один
         // раз, в строке `const val`, и больше нигде.
         val literal = "\"Тапать микросхему\""
-        val occurrences = menu.split(literal).size - 1
+        val occurrences = home.split(literal).size - 1
         assertEquals(
             "Название игры должно быть только в объявлении константы",
             1, occurrences,
         )
         assertTrue(
             "Название должно быть именно в строке const val",
-            Regex("""const val GAME_TITLE = ${Regex.escape(literal)}""").containsMatchIn(menu),
+            Regex("""const val GAME_TITLE = ${Regex.escape(literal)}""").containsMatchIn(home),
         )
     }
 
@@ -483,9 +488,13 @@ class ChipTopTest {
      * стирала сохранённый выбор группы.
      */
     @Test
-    fun `кнопка в шапке ведёт в меню и не стирает выбор`() {
+    fun `кнопка в шапке ведёт на главную и не стирает выбор`() {
         val bar = srcFile("MietTopBar.kt")
-        assertTrue("Кнопка в шапке должна называться «Меню»", bar.contains("\"Меню\""))
+        // Требование владельца от 0.62: «кнопку меню переделать в кнопку с
+        // домиком, просто как домашняя». Текст «Меню» описывал не действие,
+        // а то, что было на экране до этого.
+        assertTrue("В шапке должна быть иконка дома", bar.contains("Icons.Filled.Home"))
+        assertFalse("Текстовая кнопка «Меню» должна уйти", bar.contains("Text(\"Меню\""))
         assertFalse("Старое название «Роль» должно уйти", bar.contains("Text(\"Роль\""))
 
         val root = srcFile("MainActivity.kt")
@@ -941,10 +950,10 @@ class ChipTopTest {
     fun `название игры во всех местах одинаковое`() {
         assertEquals("Тапать микросхему", GAME_TITLE)
 
-        val menu = srcFile("RolePickerScreen.kt")
+        val home = srcFile("HomeScreen.kt")
         val game = srcFile("TapChipScreen.kt")
         // Ни одного старого варианта в коде быть не должно.
-        for (source in listOf(menu, game)) {
+        for (source in listOf(home, game)) {
             // Проверка по границе слова: «Тапать микросхему» содержит
             // подстроку «Тапать», а не «Тапай», поэтому ложного срабатывания
             // на правильном названии нет — сверяем целиком.
@@ -959,8 +968,8 @@ class ChipTopTest {
             game.contains("title = GAME_TITLE")
         )
         assertTrue(
-            "меню должно показывать GAME_TITLE",
-            menu.contains("GAME_TITLE")
+            "подпись кнопки мини-игры должна брать GAME_TAGLINE",
+            home.contains("GAME_TAGLINE")
         )
     }
 

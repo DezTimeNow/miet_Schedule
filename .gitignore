@@ -23,6 +23,10 @@ teacher-index.json
 # не требуются. Исключение: скриншоты для README лежат в docs/.
 *.png
 !docs/*.jpg
+# Иконка приложения — тоже PNG, и она обязана быть в репозитории: без неё
+# сборка из чистого клона остаётся без значка. Правило выше срабатывало и
+# на ней, поэтому исключение идёт после него.
+!app/src/main/res/mipmap-*/ic_launcher*.png
 device_cache.xml
 device_prefs.xml
 screen*.xml

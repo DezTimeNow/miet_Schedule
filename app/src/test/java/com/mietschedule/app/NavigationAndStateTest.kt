@@ -19,8 +19,10 @@ class NavigationAndStateTest {
     // ── Стартовый экран ─────────────────────────────────────────────────
 
     @Test
-    fun `без сохранённого выбора открывается выбор роли`() {
-        assertEquals(Screen.PICK_ROLE, startScreenFor(false, false))
+    fun `без сохранённого выбора открывается главная`() {
+        // С 0.62 главная и выбор роли — разные экраны. Открывать список ролей
+        // на старте значило бы показывать пустой экран вместо избранного.
+        assertEquals(Screen.HOME, startScreenFor(false, false))
     }
 
     @Test
@@ -36,8 +38,8 @@ class NavigationAndStateTest {
     // ── Системная кнопка «Назад» ────────────────────────────────────────
 
     @Test
-    fun `с выбора группы назад ведёт на выбор роли`() {
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.PICK_ENTITY, hasSelection = true))
+    fun `с выбора группы назад ведёт на главную`() {
+        assertEquals(Screen.HOME, backTargetFor(Screen.PICK_ENTITY, hasSelection = true))
     }
 
     @Test
@@ -46,8 +48,8 @@ class NavigationAndStateTest {
     }
 
     @Test
-    fun `с расписания без выбора назад ведёт на выбор роли`() {
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.SCHEDULE, hasSelection = false))
+    fun `с расписания без выбора назад ведёт на главную`() {
+        assertEquals(Screen.HOME, backTargetFor(Screen.SCHEDULE, hasSelection = false))
     }
 
     @Test
@@ -56,13 +58,13 @@ class NavigationAndStateTest {
             // при сохранённой группе, то есть ПО НАПРАВЛЕНИЮ стрелки уводил
             // вперёд — на тот экран, из которого в избранное и пришли.
             // Откуда открыли избранное, там и стоит кнопка «Избранное».
-            assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.FAVORITES, hasSelection = true))
+            assertEquals(Screen.HOME, backTargetFor(Screen.FAVORITES, hasSelection = true))
     }
 
     @Test
-    fun `из избранного без выбора назад ведёт на выбор роли`() {
-        // Регрессия: отсюда шли в SCHEDULE при пустом выборе и падали.
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.FAVORITES, hasSelection = false))
+    fun `из избранного без выбора назад ведёт на главную`() {
+        // Регрессия: отсюда шли в SCHEDULE при пушем выборе и падали.
+        assertEquals(Screen.HOME, backTargetFor(Screen.FAVORITES, hasSelection = false))
     }
 
     @Test
@@ -87,14 +89,14 @@ class NavigationAndStateTest {
     }
 
     @Test
-    fun `расписание открытое из блока меню возвращает назад в меню`() {
-        // Блок «сейчас и дальше» стоит в главном меню, и назад с открытого по
-        // нему расписания обязан вести в меню. Проверено на эмуляторе: раньше
-        // уводило в список групп, потому что стрелка «‹» шла напрямую в
-        // PICK_ENTITY в обход backTargetFor.
+    fun `расписание открытое из блока избранного возвращает назад на главную`() {
+        // Блок «сейчас и дальше» стоит на главной, и назад с открытого по
+        // нему расписания обязан вести на главную. Проверено на эмуляторе:
+        // раньше уводило в список групп, потому что стрелка «‹» шла напрямую
+        // в PICK_ENTITY в обход backTargetFor.
         assertEquals(
-            Screen.PICK_ROLE,
-            backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.PICK_ROLE),
+            Screen.HOME,
+            backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.HOME),
         )
     }
 
@@ -116,8 +118,8 @@ class NavigationAndStateTest {
         // сохранённого выбора, а не по источнику, из-за чего «О программе»
         // навигационно приросло к подменю «студент».
         assertEquals(
-            Screen.PICK_ROLE,
-            backTargetFor(Screen.ABOUT, hasSelection = true, origin = Screen.PICK_ROLE),
+            Screen.HOME,
+            backTargetFor(Screen.ABOUT, hasSelection = true, origin = Screen.HOME),
         )
     }
 
@@ -138,7 +140,7 @@ class NavigationAndStateTest {
         for (screen in listOf(
             Screen.ABOUT, Screen.SETTINGS, Screen.FAVORITES, Screen.CHIP_GAME, Screen.REPORT,
         )) {
-            for (origin in listOf(Screen.PICK_ROLE, Screen.PICK_ENTITY, Screen.FAVORITES)) {
+            for (origin in listOf(Screen.HOME, Screen.PICK_ROLE, Screen.PICK_ENTITY, Screen.FAVORITES)) {
                 if (origin == screen) continue
                 assertEquals(
                     "экран $screen из $origin вернул не туда",
@@ -152,13 +154,18 @@ class NavigationAndStateTest {
     @Test
     fun `без источника работает правило экрана`() {
         // Источник неизвестен только при холодном старте или если экран открыт
-        // не через goTo. Тогда действует таблица: из «О программе» без
-        // выбора — в меню, с выбором — в список сущностей (старое поведение).
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.ABOUT, hasSelection = false))
-        assertEquals(Screen.PICK_ENTITY, backTargetFor(Screen.ABOUT, hasSelection = true))
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.FAVORITES, hasSelection = true))
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.SETTINGS, hasSelection = true))
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.CHIP_GAME, hasSelection = true))
+        // не через goTo. Тогда действует таблица.
+        //
+        // С 0.62 любое подменю возвращает на ГЛАВНУЮ, а не в список сущностей.
+        // Раньше «О программе» при сохранённой группе возвращало в PICK_ENTITY
+        // — то есть подменю навигационно прирастало к выбору группы, и
+        // «Назад» уводило туда, куда человек не заходил. Правило «домой»
+        // сделало главную единственным возвратом.
+        assertEquals(Screen.HOME, backTargetFor(Screen.ABOUT, hasSelection = false))
+        assertEquals(Screen.HOME, backTargetFor(Screen.ABOUT, hasSelection = true))
+        assertEquals(Screen.HOME, backTargetFor(Screen.FAVORITES, hasSelection = true))
+        assertEquals(Screen.HOME, backTargetFor(Screen.SETTINGS, hasSelection = true))
+        assertEquals(Screen.HOME, backTargetFor(Screen.CHIP_GAME, hasSelection = true))
     }
 
     @Test
@@ -170,16 +177,18 @@ class NavigationAndStateTest {
             backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.SCHEDULE),
         )
         assertEquals(
-            Screen.PICK_ROLE,
+            Screen.HOME,
             backTargetFor(Screen.ABOUT, hasSelection = false, origin = Screen.ABOUT),
         )
     }
 
     @Test
-    fun `на экране роли назад ничего не меняет`() {
-        // BackHandler там выключен: там «Назад» = выход из приложения.
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.PICK_ROLE, hasSelection = true))
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.PICK_ROLE, hasSelection = false))
+    fun `с выбора роли назад ведёт на главную`() {
+        // На главной BackHandler выключен («Назад» = выход), но с выбора роли
+        // возвращаться есть куда — на главную, откуда пришли.
+        // Выбор роли — подменю главной, из него возвращаются на главную.
+        assertEquals(Screen.HOME, backTargetFor(Screen.PICK_ROLE, hasSelection = true))
+        assertEquals(Screen.HOME, backTargetFor(Screen.PICK_ROLE, hasSelection = false))
     }
 
     @Test
@@ -190,13 +199,13 @@ class NavigationAndStateTest {
     }
 
     @Test
-    fun `ни один экран не ведёт назад сам в себя кроме выбора роли`() {
-        // Проверка на «зацикливание»: BackHandler на экране роли выключен,
+    fun `ни один экран не ведёт назад сам в себя кроме главной`() {
+        // Проверка на «зацикливание»: BackHandler на главной выключен,
         // остальные экраны обязаны уводить в другой экран.
         for (screen in Screen.entries) {
             val target = backTargetFor(screen, hasSelection = true)
-            if (screen == Screen.PICK_ROLE) {
-                assertEquals(Screen.PICK_ROLE, target)
+            if (screen == Screen.HOME) {
+                assertEquals(Screen.HOME, target)
             } else {
                 assertTrue("экран $screen ведёт сам в себя", target != screen)
             }

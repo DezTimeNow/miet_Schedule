@@ -1,6 +1,7 @@
 package com.mietschedule.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -50,27 +51,42 @@ class FavoritesTest {
 
     // ── Доступность кнопки ────────────────────────────────────────────────
 
+    /**
+     * Избранное открывается из подписи над блоком пар, а не отдельной кнопкой.
+     *
+     * Требование владельца от 0.62: «подпись блока Избранное станет кнопкой,
+     * второй кнопки не нужно». Кнопка в подменю убрана, вход один — здесь.
+     */
     @Test
-    fun `избранное доступно в главном меню под выбором роли`() {
-        val s = src("RolePickerScreen.kt")
+    fun `избранное открывается из подписи над блоком пар`() {
+        // Комментарии цитируют старую подпись как объяснение правки, поэтому
+        // ищем по коду без них — иначе тест падает на собственном комментарии.
+        val card = stripComments(src("NextLessonCard.kt"))
         assertTrue(
-            "В главном меню нет кнопки «Избранное»",
-            s.contains("\"Избранное\""),
+            "Подпись блока должна быть кнопкой открытия избранного",
+            card.contains("onOpenFavorites"),
         )
-        assertTrue(
-            "Кнопка не вызывает onOpenFavorites",
-            s.contains("onClick = { onOpenFavorites?.invoke() }"),
+        // В подписи больше нет «что сейчас»: она обещала пояснение, а
+        // пояснять было нечего — сам блок и есть ответ.
+        assertFalse(
+            "В подписи блока не должно остаться слов «что сейчас»",
+            card.contains("что сейчас"),
         )
     }
 
     @Test
-    fun `кнопки главного меню стоят в одном ряду`() {
-        val s = src("RolePickerScreen.kt")
-        val row = s.substringAfter("horizontalArrangement = Arrangement.Center")
-        val block = row.substringBefore("}\n        }\n    }")
-        assertTrue("«Избранное» не в том же ряду, что «Настройки»",
-            block.contains("\"Избранное\"") && block.contains("\"Настройки\""))
+    fun `в подменю главной нет второй кнопки избранное`() {
+        val home = src("HomeScreen.kt")
+        // Подменю: Настройки, мини-игра, О программе. «Избранное» живёт
+        // в подписи над блоком, иначе на одном экране два одинаковых слова.
+        val menu = home.substringAfter("horizontalArrangement = Arrangement.Center")
+        val buttons = menu.substringBefore("}\n    }")
+        assertTrue(
+            "В подменю главной осталась кнопка «Избранное»",
+            !buttons.contains("\"Избранное\""),
+        )
     }
+
 
     @Test
     fun `в шапке больше нет кнопки избранного`() {
@@ -232,7 +248,7 @@ class FavoritesTest {
         // сохранённой группе. Проверяем само правило, а не текст: правило
         // живёт в функции, и текстовый тест его не защищает — при
         // переписывании строки он продолжал бы «проходить».
-        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.FAVORITES, hasSelection = true))
+        assertEquals(Screen.HOME, backTargetFor(Screen.FAVORITES, hasSelection = true))
     }
 
     @Test

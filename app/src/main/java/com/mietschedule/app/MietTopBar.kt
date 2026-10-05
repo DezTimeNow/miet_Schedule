@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Star
@@ -116,6 +117,15 @@ fun MietTopBar(
     onBack: (() -> Unit)? = null,
     isFav: Boolean? = null,
     onToggleFav: (() -> Unit)? = null,
+    /**
+     * Слот под иконку «домой» пуст — на главной.
+     *
+     * Домик ведёт на главную, и на главной самой он вёл бы в себя же. Пустая
+     * кнопка читается как сломанная, поэтому слот резервируется той же
+     * шириной, что и на остальных экранах. Без резерва заголовок уезжал бы
+     * на 48 px вправо именно на главном экране.
+     */
+    homeSlotEmpty: Boolean = false,
 ) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
@@ -207,12 +217,28 @@ fun MietTopBar(
                     modifier = Modifier.size(22.dp)
                 )
             }
-            // Кнопка называется «Меню» и всегда возвращает на главную
-            // страницу выбора роли. Раньше она называлась «Роль», хотя
-            // вела не на выбор роли, а на домашний экран, и на экране
-            // расписания с уже выбранной группой это вводило в заблуждение.
-            TextButton(onClick = onChangeRole) {
-                Text("Меню", color = LocalAppColors.current.currentGroup, fontSize = 13.sp)
+            // ДОМИК — возврат на главную. Раньше здесь стоял текст «Меню»,
+            // а ещё раньше «Роль», хотя кнопка вела не на выбор роли, а на
+            // домашний экран: на расписании с уже выбранной группой подпись
+            // обещала одно и делала другое. Иконка дома читается однозначно —
+            // это место, откуда уходят, а не место, куда приходят.
+            //
+            // Описание обязательно: без него TalkBack объявляет иконку
+            // молчаливой, и незрячий человек не узнает, что кнопка есть.
+            if (homeSlotEmpty) {
+                Spacer(Modifier.width(BACK_SLOT))
+            } else {
+                IconButton(
+                    onClick = onChangeRole,
+                    modifier = Modifier.semantics { contentDescription = "На главную" },
+                ) {
+                    Icon(
+                        Icons.Filled.Home,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
     )

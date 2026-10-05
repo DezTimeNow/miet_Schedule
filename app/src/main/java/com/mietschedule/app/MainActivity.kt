@@ -56,7 +56,7 @@ internal val DAY_SHORT = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", 
  * без запуска Activity.
  */
 internal fun startScreenFor(hasSavedSelection: Boolean, requestedGroup: Boolean): Screen =
-    if (hasSavedSelection || requestedGroup) Screen.SCHEDULE else Screen.PICK_ROLE
+    if (hasSavedSelection || requestedGroup) Screen.SCHEDULE else Screen.HOME
 
 /**
  * Куда ведёт системная кнопка «Назад» и стрелка «‹».
@@ -101,16 +101,20 @@ internal fun backTargetFor(
     // из главного меню обязано возвращать в главное меню.
     if (origin != null && origin != screen) return origin
     return when (screen) {
-        Screen.PICK_ENTITY -> Screen.PICK_ROLE
-        // Расписание: источник уже проверен выше, здесь только запасной путь
-        // для входа без метки — то есть прямо из избранного или из меню.
-        Screen.SCHEDULE -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
-        Screen.FAVORITES -> Screen.PICK_ROLE
-        Screen.SETTINGS -> Screen.PICK_ROLE
-        Screen.ABOUT -> if (hasSelection) Screen.PICK_ENTITY else Screen.PICK_ROLE
+        // Запасной путь для входа без метки: подменю возвращает на главную,
+        // а не на выбор роли — иначе «О программе» из главного меню вернул бы
+        // в список ролей, то есть ровно то жалобу, что была исправлена в 0.60.
+        Screen.PICK_ENTITY -> Screen.HOME
+        Screen.PICK_ROLE -> Screen.HOME
+        Screen.FAVORITES -> Screen.HOME
+        Screen.SETTINGS -> Screen.HOME
+        Screen.ABOUT -> Screen.HOME
         Screen.REPORT -> Screen.ABOUT
-        Screen.CHIP_GAME -> Screen.PICK_ROLE
-        Screen.PICK_ROLE -> Screen.PICK_ROLE
+        Screen.CHIP_GAME -> Screen.HOME
+        Screen.SCHEDULE -> if (hasSelection) Screen.PICK_ENTITY else Screen.HOME
+        // ГЛАВНАЯ — точка входа, из неё возвращаться некуда. Отдаём саму себя:
+        // BackHandler на ней выключен, а стрелки в шапке у главной нет.
+        Screen.HOME -> Screen.HOME
     }
 }
 
@@ -188,7 +192,10 @@ internal val RoleSaver = Saver<Role, String>(
 
 internal val ScreenSaver = Saver<Screen, String>(
     save = { it.name },
-    restore = { key -> Screen.entries.firstOrNull { it.name == key } ?: Screen.PICK_ROLE },
+    // Экран не найден (например, приложение обновили, а экран убрали) —
+    // открываем главную, а не подменю: главная это точка входа, и человек
+    // с неё сам дойдёт куда надо.
+    restore = { key -> Screen.entries.firstOrNull { it.name == key } ?: Screen.HOME },
 )
 
 /**
@@ -215,6 +222,21 @@ internal val ScreenNullableSaver = Saver<Screen?, String>(
 // it.name, а не по списку констант, поэтому новый экран в списке restore
 // не нужен.
 internal enum class Screen {
+    /**
+     * ГЛАВНАЯ: блок избранного, кнопка «Выбрать роль», нижнее подменю.
+     *
+     * Раньше главной была [PICK_ROLE] — экран с карточками «Студент /
+     * Преподаватель / Аудитория». По требованию владельца от 0.62 эти три
+     * карточки ушли в отдельный экран, а главная стала компактной: сначала
+     * видно избранное (то, ради чего приложение открывают), ниже — одна
+     * кнопка выбора роли и служебное подменю.
+     *
+     * Разделение на два экрана, а не переименование: у них разные обязанности.
+     * Главная — вход, с которого некуда возвращаться, и её не должно быть
+     * целью «Назад». PICK_ROLE — подменю выбора, куда «Назад» обязан вернуться.
+     * Смешав их в один экран, пришлось бы гадать, куда ведёт «Назад» с главной.
+     */
+    HOME,
     PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT, REPORT, CHIP_GAME,
 }
 
@@ -299,8 +321,9 @@ fun AppRoot(
     // потому что она была корнем стека. На экранах выбора группы и роли
     // стрелки «‹» в шапке либо нет, либо она ведёт на тот же экран, то есть
     // вернуться было нечем. Здесь те же переходы, что и у стрелки «‹».
-    // На экране роли перехват выключен: там назад — выход из приложения.
-    BackHandler(enabled = screen != Screen.PICK_ROLE) {
+    // На главной перехват выключен: оттуда возвращаться некуда, и «Назад»
+    // должен закрывать приложение, а не открывать подменю выбора роли.
+    BackHandler(enabled = screen != Screen.HOME) {
         screen = backTargetFor(screen, selection != null, screenOrigin)
     }
     // Кнопка «Обновить» есть на всех экранах, поэтому состояние живёт здесь и
@@ -555,26 +578,37 @@ fun AppRoot(
 
 
     when (screen) {
-        Screen.PICK_ROLE -> RolePickerScreen(
-            current = if (prefs.load() != null) role else null,
+        // ГЛАВНАЯ. Блок избранного, кнопка выбора роли, служебное подменю.
+        Screen.HOME -> HomeScreen(
             api = api,
             prefs = prefs,
             onOpenFavorite = { r, value -> openFromMenu(r, value) },
             onRefresh = { refreshCurrent() },
-            onChangeRole = { screen = Screen.PICK_ROLE },
+            onPickRole = { goTo(Screen.PICK_ROLE) },
             refreshNote = refreshNote,
             onAbout = { goTo(Screen.ABOUT) },
             onSettings = { goTo(Screen.SETTINGS) },
-            onOpenFavorites = { goTo(Screen.FAVORITES) },
             onOpenChipGame = { goTo(Screen.CHIP_GAME) },
+            onOpenFavorites = { goTo(Screen.FAVORITES) },
             refreshing = refreshing,
+        )
+
+        // ВЫБОР РОЛИ — отдельный экран, а не содержимое главной. Три карточки
+        // занимали почти весь первый экран и вытесняли избранное, ради
+        // которого приложение и открывают. Здесь они стоят без оглядки на
+        // блок избранного: выбрал роль — выбираешь сущность.
+        Screen.PICK_ROLE -> RoleSelectScreen(
+            current = if (prefs.load() != null) role else null,
+            onRefresh = { refreshCurrent() },
+            onBack = { screen = backTargetFor(Screen.PICK_ROLE, selection != null, screenOrigin) },
+            onHome = { goTo(Screen.HOME) },
             onPick = { r ->
                 prefs.saveRole(r)
                 role = r
                 selection = prefs.loadFor(r)
                 teacherCode = ""
-                screen = Screen.PICK_ENTITY
-            }
+                goTo(Screen.PICK_ENTITY)
+            },
         )
 
         Screen.PICK_ENTITY -> {
@@ -591,7 +625,7 @@ fun AppRoot(
                         prefs.save(chosen)
                         goTo(Screen.SCHEDULE)
                     },
-                    onSwitchRole = { screen = Screen.PICK_ROLE },
+                    onSwitchRole = { goTo(Screen.PICK_ROLE) },
                     onRefresh = { refreshCurrent() },
                     refreshing = refreshing,
                     refreshNote = refreshNote,
@@ -607,7 +641,7 @@ fun AppRoot(
                         prefs.save(name)
                         goTo(Screen.SCHEDULE)
                     },
-                    onBack = { screen = Screen.PICK_ROLE },
+                    onBack = { screen = backTargetFor(Screen.PICK_ENTITY, selection != null, screenOrigin) },
                     // Раньше здесь передавались ТОЛЬКО onChosen и onBack.
                     // onRefresh не передавался, поэтому срабатывал его
                     // аргумент по умолчанию `= {}` из сигнатуры: кнопка в шапке нажималась и ничего
@@ -615,7 +649,7 @@ fun AppRoot(
                     // не жмётся». Заодно не передавались «Роль», refreshing
                     // и прогресс, то есть шапка у этой роли отличалась.
                     onRefresh = { refreshCurrent() },
-                    onChangeRole = { screen = Screen.PICK_ROLE },
+                    onChangeRole = { goTo(Screen.HOME) },
                     refreshing = refreshing,
                     refreshNote = refreshNote,
                 )
@@ -631,9 +665,9 @@ fun AppRoot(
                         prefs.save(name)
                         goTo(Screen.SCHEDULE)
                     },
-                    onBack = { screen = Screen.PICK_ROLE },
+                    onBack = { screen = backTargetFor(Screen.PICK_ENTITY, selection != null, screenOrigin) },
                     onRefresh = { refreshCurrent() },
-                    onChangeRole = { screen = Screen.PICK_ROLE },
+                    onChangeRole = { goTo(Screen.HOME) },
                     refreshing = refreshing,
                     refreshNote = refreshNote,
                     onAbout = { goTo(Screen.ABOUT) },
@@ -644,7 +678,7 @@ fun AppRoot(
         Screen.SETTINGS -> SettingsScreen(
             onBack = { screen = backTargetFor(Screen.SETTINGS, selection != null, screenOrigin) },
             onRefresh = { refreshCurrent() },
-            onChangeRole = { screen = Screen.PICK_ROLE },
+            onChangeRole = { goTo(Screen.HOME) },
             onThemeChange = onThemeChange,
             refreshing = refreshing,
         )
@@ -655,7 +689,7 @@ fun AppRoot(
             onBack = { screen = backTargetFor(Screen.ABOUT, selection != null, screenOrigin) },
             onUpdateFound = onUpdateFound,
             onRefresh = { refreshCurrent() },
-            onChangeRole = { screen = Screen.PICK_ROLE },
+            onChangeRole = { goTo(Screen.HOME) },
             onReport = { goTo(Screen.REPORT) },
             refreshing = refreshing,
             refreshNote = refreshNote,
@@ -747,7 +781,7 @@ Screen.FAVORITES -> FavoritesScreen(
             // отдельная ветка была бы второй копией того же правила.
             onBack = { screen = backTargetFor(Screen.FAVORITES, selection != null, screenOrigin) },
             onRefresh = { refreshCurrent() },
-            onChangeRole = { screen = Screen.PICK_ROLE },
+            onChangeRole = { goTo(Screen.HOME) },
             refreshing = refreshing,
             refreshNote = refreshNote,
             // Снятие звезды прямо здесь не пересчитывало будильники: экран
@@ -767,7 +801,7 @@ Screen.FAVORITES -> FavoritesScreen(
             prefs = prefs,
             role = role,
             selection = selection,
-            onNoSelection = { screen = Screen.PICK_ROLE },
+            onNoSelection = { goTo(Screen.HOME) },
             teacherCode = teacherCode,
             roomName = roomNameArg,
             dataGeneration = dataGeneration,
@@ -788,7 +822,7 @@ Screen.FAVORITES -> FavoritesScreen(
             },
             // Из избранного аудитория открывается по имени (value), а код
             // неизвестен — фильтр кэша отработает по имени, это верно.
-            onChangeRole = { screen = Screen.PICK_ROLE },
+            onChangeRole = { goTo(Screen.HOME) },
             onScreenState = { n, err -> reportLessons = n; reportError = err },
         )
     }

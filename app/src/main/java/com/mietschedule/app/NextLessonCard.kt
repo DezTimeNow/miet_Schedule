@@ -62,6 +62,15 @@ fun NextLessonCard(
     prefs: GroupPrefs,
     /** Открыть расписание: роль и значение из избранного. */
     onOpen: (Role, String) -> Unit,
+    /**
+     * Открыть экран избранного целиком.
+     *
+     * Подпись «Избранное» в шапке блока сделана кнопкой по требованию
+     * владельца от 0.62, поэтому отдельной кнопки «Избранное» в нижнем
+     * подменю главной нет. `null` — на экранах, где список избранного не
+     * нужен, и подпись остаётся простой строкой.
+     */
+    onOpenFavorites: (() -> Unit)? = null,
 ) {
     // Избранное читается из хранилища, а Compose об этом не знает: значение
     // живёт в state, иначе добавление звезды не отражалось бы здесь до
@@ -118,12 +127,31 @@ fun NextLessonCard(
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(
-                    "Избранное: что сейчас",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = LocalAppColors.current.favStar,
-                )
+                if (onOpenFavorites != null) {
+                    // Подпись блока — кнопка открытия списка избранного.
+                    // Раньше она читалась «Избранное: что сейчас», но списка
+                    // избранного из неё не открывалось, и вторая кнопка
+                    // «Избранное» в подменю была единственным входом.
+                    // Теперь вход один, и он здесь — на словах, которые уже
+                    // стоят в этом блоке.
+                    Text(
+                        "Избранное",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = LocalAppColors.current.favStar,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onOpenFavorites() }
+                            .padding(vertical = 4.dp, horizontal = 6.dp),
+                    )
+                } else {
+                    Text(
+                        "Избранное",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = LocalAppColors.current.favStar,
+                    )
+                }
             }
             // Группы по избранному: заголовок отмечает, кому принадлежит пара.
             // Иначе при двух избранных строки выглядели бы как одна лента, и
