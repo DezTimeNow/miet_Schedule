@@ -706,6 +706,12 @@ Screen.FAVORITES -> FavoritesScreen(
             onChangeRole = { screen = Screen.PICK_ROLE },
             refreshing = refreshing,
             refreshNote = refreshNote,
+            // Снятие звезды прямо здесь не пересчитывало будильники: экран
+            // избранного менял список, а напоминания оставались до фоновой
+            // задачи. Отданная группа продолжала присылать пуши.
+            onFavChanged = {
+                runCatching { ReminderScheduler.reschedule(context, api) }
+            },
         )
 
         // Расписание без выбранной сущности показывать нечем: экран взял бы
