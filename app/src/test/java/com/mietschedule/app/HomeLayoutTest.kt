@@ -40,19 +40,71 @@ class HomeLayoutTest {
      * уходило за нижний край.
      */
     @Test
-    fun `на главной нет карточек ролей`() {
+    fun `на главной нет карточек ролей но есть карточки действий`() {
         val home = code("HomeScreen.kt")
-        // Функция карточки определена в этом же файле — рядом с экраном
-        // выбора роли. Проверять надо ВЫЗОВ: на главной карточек быть не
-        // должно, а объявление функции само по себе её не рисует.
+        // Функции карточек определены в этом же файле. Проверять надо
+        // ВЫЗОВЫ: на главной карточек ролей быть не должно, а объявление
+        // функции само по себе ничего не рисует.
         val homeScreen = home.substringBefore("fun RoleSelectScreen(")
         assertFalse(
             "Карточки ролей должны быть только на экране выбора роли",
             homeScreen.contains("RoleSelectCard("),
         )
         assertTrue(
-            "Главная должна вести в экран выбора роли кнопкой",
-            homeScreen.contains("onPickRole()"),
+            "Главная должна вести в экран выбора роли карточкой",
+            homeScreen.contains("onClick = onPickRole"),
+        )
+    }
+
+    /**
+     * Две карточки в том же виде, что и прежние карточки ролей.
+     *
+     * Требование владельца от 0.64: «в предыдущих билдах были красивые
+     * кнопки студент/преподаватель/аудитория, на главной должны быть такие
+     * же две красивые кнопки "выбрать роль" и "избранное"». В 0.63 обе
+     * строки были простым текстом, и оформление на главной пропало.
+     */
+    @Test
+    fun `на главной две карточки выбор роли и избранное`() {
+        val home = code("HomeScreen.kt")
+        val homeScreen = home.substringBefore("fun RoleSelectScreen(")
+        assertTrue(
+            "Нет карточки «Выбрать роль»",
+            Regex("""HomeActionCard\([\s\S]{0,200}?"Выбрать роль"""").containsMatchIn(homeScreen),
+        )
+        assertTrue(
+            "Нет карточки «Избранное»",
+            Regex("""HomeActionCard\([\s\S]{0,200}?"Избранное"""").containsMatchIn(homeScreen),
+        )
+        // Вид: иконка, название и стрелка — как у прежних карточек ролей.
+        assertTrue(
+            "Карточка должна рисовать иконку",
+            homeScreen.contains("Icon(icon, contentDescription = null, tint = MIET_BLUE"),
+        )
+        assertTrue(
+            "Карточка должна рисовать стрелку",
+            homeScreen.contains("""\u203a"""),
+        )
+    }
+
+    /**
+     * Пояснений под названием нет — владелец просил только иконку и название.
+     */
+    @Test
+    fun `на карточках главной только иконка и название`() {
+        val home = code("HomeScreen.kt")
+        val fn = home.substringAfter("private fun HomeActionCard(")
+            .substringBefore("\n}\n")
+        // Второй Text внутри карточки — только стрелка. Пояснительной
+        // строки (12.sp, приглушённый цвет) быть не должно.
+        assertFalse(
+            "На карточках главной не должно быть пояснений под названием",
+            fn.contains("12.sp"),
+        )
+        assertFalse(
+            "Приглушённый цвет для пояснения не используется",
+            Regex("""HomeActionCard[\s\S]{0,600}?LocalAppColors\.current\.muted""")
+                .containsMatchIn(home.substringBefore("fun RoleSelectScreen(")),
         )
     }
 
@@ -124,7 +176,7 @@ class HomeLayoutTest {
     fun `порядок на главной избранное затем роль затем подменю`() {
         val home = code("HomeScreen.kt")
         val favIdx = home.indexOf("NextLessonCard(")
-        val roleIdx = home.indexOf("onPickRole()")
+        val roleIdx = home.indexOf("onClick = onPickRole")
         val menuIdx = home.indexOf("horizontalArrangement = Arrangement.Center")
         assertTrue("Не найден блок избранного", favIdx > 0)
         assertTrue("Не найдена кнопка выбора роли", roleIdx > 0)
@@ -222,4 +274,76 @@ class HomeLayoutTest {
             main.contains("onHome = { goTo(Screen.HOME) }"),
         )
     }
+    /**
+     * Домик ведёт на главную из каждого экрана.
+     *
+     * Дефект, найденный при проверке на устройстве: на экране выбора группы
+     * домик был подключён к тому же действию, что и стрелка «‹», то есть вёл
+     * на выбор роли. Через код это не видно — обе кнопки рисуются одной
+     * шапкой, и разница только в том, куда ведёт параметр.
+     */
+    @Test
+    fun `в шапке нет экрана где домик ведёт не на главную`() {
+        val screens = mainDir.listFiles().orEmpty().filter { it.name.endsWith(".kt") }
+        val bad = mutableListOf<String>()
+
+        for (f in screens) {
+            val src = code(f.name)
+            // Домик — это onChangeRole у общей шапки. Смотрим только вызовы
+            // с лямбдой: там адрес виден прямо. Проброс параметра
+            // (`onChangeRole = onChangeRole`) проверять тут нечего — его
+            // значение задаёт вызывающий экран, и это отдельная проверка.
+            // Пустая лямбда — это пустой слот домика на самой главной, где
+            // кнопке некуда вести. Такой слот объявляется отдельным
+            // параметром, и без него он был бы не отличим от забытой кнопки.
+            val homeSlotEmpty = src.contains("homeSlotEmpty = true")
+            for (m in Regex("""onChangeRole\s*=\s*(\{[^}]*\})""").findAll(src)) {
+                val target = m.groupValues[1]
+                if (target == "{}" && homeSlotEmpty) continue
+                if (!target.contains("HOME")) {
+                    bad += "${f.name}: onChangeRole = $target"
+                }
+            }
+        }
+        assertTrue(
+            "Домик в шапке должен вести на главную. Неверные вызовы: $bad",
+            bad.isEmpty(),
+        )
+
+        // Вызывающая сторона обязана передать именно возврат домой.
+        val main = code("MainActivity.kt")
+        assertTrue(
+            "MainActivity должен передавать экрану групп возврат на главную",
+            main.contains("onHome = { goTo(Screen.HOME) }"),
+        )
+        assertFalse(
+            "Домик не должен вести на выбор роли",
+            main.contains("onHome = { goTo(Screen.PICK_ROLE) }"),
+        )
+    }
+
+    /**
+     * Экран выбора группы различает «назад» и «на главную».
+     */
+    @Test
+    fun `на экране групп стрелка назад и домик разведены`() {
+        val ui = code("GroupPickerUi.kt")
+        assertTrue(
+            "У экрана групп должен быть отдельный параметр возврата домой",
+            ui.contains("onHome: () -> Unit = {}"),
+        )
+        assertTrue(
+            "Домик должен звать onHome",
+            Regex("""onChangeRole\s*=\s*onHome""").containsMatchIn(ui),
+        )
+        assertTrue(
+            "Стрелка должна звать onBack, а не то же действие, что домик",
+            Regex("""onBack\s*=\s*onBack""").containsMatchIn(ui),
+        )
+        assertFalse(
+            "Стрелка не должна звать действие домика",
+            Regex("""onBack\s*=\s*onHome""").containsMatchIn(ui),
+        )
+    }
+
 }

@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -15,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -153,28 +157,36 @@ fun HomeScreen(
                     api = api,
                     prefs = prefs,
                     onOpen = onOpenFavorite,
-                    onOpenFavorites = onOpenFavorites,
+                    // Подпись блока остаётся строкой, а не кнопкой: вход в
+                    // избранное теперь даёт карточка ниже, и второй способ
+                    // нажатия на то же самое только размывает, куда давить.
+                    onOpenFavorites = null,
                 )
             }
 
             Spacer(Modifier.height(10.dp))
 
-            // ───── ВЫБОР РОЛИ ─────
+            // ───── ВЫБОР РОЛИ И ИЗБРАННОЕ ─────
             //
-            // Одна кнопка вместо трёх карточек. Карточки были уместны, когда
-            // главная была только про выбор роли; теперь здесь же избранное,
-            // и три карточки вытесняли его за пределы экрана.
-            Text(
-                "Выбрать роль",
-                textAlign = TextAlign.Center,
-                color = MIET_BLUE,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { onPickRole() }
-                    .padding(vertical = 14.dp),
+            // Две карточки в том же виде, что и прежние карточки ролей:
+            // иконка, название, стрелка. Текстом они были только в 0.62, и
+            // владелец сразу это заметил. Карточек ролей на главной больше
+            // нет — они на своём экране, — но вид остался общим для действий
+            // главной.
+            //
+            // Пояснений под названием нет: владелец просил только иконку и
+            // название. Подпись и так однозначна, а пустая вторая строка
+            // делала бы карточки выше без пользы.
+            HomeActionCard(
+                icon = Icons.Filled.School,
+                title = "Выбрать роль",
+                onClick = onPickRole,
+            )
+            Spacer(Modifier.height(10.dp))
+            HomeActionCard(
+                icon = Icons.Filled.Star,
+                title = "Избранное",
+                onClick = { onOpenFavorites?.invoke() },
             )
 
             Spacer(Modifier.height(18.dp))
@@ -186,9 +198,9 @@ fun HomeScreen(
             // поэтому FlowRow переносит их целиком, а не рвёт строку между
             // словами.
             //
-            // «Избранное» в этот ряд НЕ входит: доступ к нему даёт кнопка-подпись
-            // внутри блока выше, и вторая такая же кнопка читалась бы как
-            // дубликат.
+            // «Избранное» в этот ряд НЕ входит: ему отведена своя карточка
+            // выше, рядом с «Выбрать роль». В ряду подменю она была бы
+            // третьей кнопкой одного и того же действия.
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -211,6 +223,58 @@ fun HomeScreen(
                     Text("О программе", color = MIET_BLUE, fontSize = 13.sp)
                 }
             }
+        }
+    }
+}
+
+/**
+ * СТРОКА-КНОПКА ГЛАВНОЙ.
+ *
+ * Вид повторяет прежние карточки ролей: иконка, название и стрелка «›»
+ * справа. В 0.62 обе строки главной были простым текстом, и это читалось
+ * как потеря оформления — карточки ушли вместе с ролями, хотя главной
+ * они нужны не меньше.
+ *
+ * Пояснение под названием не выводится: владелец просил на карточках
+ * только иконку и название. Состояния «выбрано» тоже нет — на главной
+ * отмечать нечего, выбор происходит на следующих экранах.
+ *
+ * Карточка не [RoleSelectCard]: та живёт на экране ролей, рисует роль и
+ * умеет показывать отметку выбора. Общего у них только вид, и сводить их
+ * в одну функцию значило бы тащить сюда роль и признак выбора.
+ */
+@Composable
+private fun HomeActionCard(
+    icon: ImageVector,
+    title: String,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(2.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = MIET_BLUE, modifier = Modifier.size(30.dp))
+            Spacer(Modifier.width(14.dp))
+            Text(
+                title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "\u203a",
+                fontSize = 22.sp,
+                color = MIET_BLUE,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }

@@ -57,7 +57,17 @@ fun GroupPickerScreen(
     prefs: GroupPrefs,
     currentGroup: String?,
     onChosen: (String) -> Unit,
-    onSwitchRole: () -> Unit = {},
+    /**
+     * Стрелка «‹»: возврат туда, откуда вошли.
+     *
+     * Отдельно от домика намеренно. Раньше оба действия были одним
+     * параметром onSwitchRole, и домик в шапке вёл на выбор роли вместо
+     * главной: на главной он должен возвращать домой, а стрелка — на
+     * предыдущий экран, и это разные адреса.
+     */
+    onBack: () -> Unit = {},
+    /** Домик: всегда на главную, из любого места приложения. */
+    onHome: () -> Unit = {},
     onRefresh: () -> Unit = {},
     refreshing: Boolean = false,
     refreshNote: String = "",
@@ -115,9 +125,9 @@ fun GroupPickerScreen(
                 title = "Расписание МИЭТ",
                 subtitle = "Выбери свою группу",
                 onRefresh = onRefresh,
-                onChangeRole = onSwitchRole,
+                onChangeRole = onHome,
                 refreshing = refreshing,
-                onBack = onSwitchRole
+                onBack = onBack
             )
         }
     ) { pad ->

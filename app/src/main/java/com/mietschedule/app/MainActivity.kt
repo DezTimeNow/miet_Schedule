@@ -625,7 +625,10 @@ fun AppRoot(
                         prefs.save(chosen)
                         goTo(Screen.SCHEDULE)
                     },
-                    onSwitchRole = { goTo(Screen.PICK_ROLE) },
+                    // Стрелка «‹» возвращает туда, откуда вошли (обычно на
+                    // выбор роли), а домик — всегда на главную.
+                    onBack = { screen = backTargetFor(Screen.PICK_ENTITY, selection != null, screenOrigin) },
+                    onHome = { goTo(Screen.HOME) },
                     onRefresh = { refreshCurrent() },
                     refreshing = refreshing,
                     refreshNote = refreshNote,
