@@ -20,8 +20,9 @@ teacher-index.json
 *.log
 
 # Отладочные снимки экрана и дампы UI — служебные файлы, в репозитории
-# не требуются
+# не требуются. Исключение: скриншоты для README лежат в docs/.
 *.png
+!docs/*.jpg
 device_cache.xml
 device_prefs.xml
 screen*.xml
