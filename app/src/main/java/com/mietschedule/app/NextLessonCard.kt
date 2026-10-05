@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -67,15 +69,15 @@ fun NextLessonCard(
     val favs = remember { favSnapshot(prefs) }
     if (favs.isEmpty()) return
 
-    var data by remember(favs) { mutableStateOf(FavLessonData()) }
+    var groups by remember(favs) { mutableStateOf<List<FavLessons>>(emptyList()) }
     LaunchedEffect(favs) {
         val loaded = withContext(Dispatchers.IO) { favLessonData(api, favs) }
-        data = loaded
+        groups = loaded
     }
 
     // Пока кэш читается, карточка уже с парой не нужна: пустая плашка над
     // кнопками мигает и прыгает. Ждём данные.
-    if (data.lessons.isEmpty()) return
+    if (groups.isEmpty()) return
 
     // Тик раз в минуту: «через 12 минут» устаревает быстро, а перерисовывать
     // список пар из-за секунд незачем.
@@ -87,10 +89,19 @@ fun NextLessonCard(
         }
     }
 
-    val (going, upcoming) = remember(data.lessons, data.times, now) {
-        NextLessonLogic.currentAndNext(lessons = data.lessons, times = data.times, now = now)
+    // По каждому избранному СВОЯ пара строк: идущая и следующая. Общий
+    // currentAndNext по всем сразу возвращал одну самую раннюю пару, и второе
+    // избранное в блоке просто отсутствовало.
+    val rows = remember(groups, now) {
+        groups.mapNotNull { g ->
+            val (going, upcoming) = NextLessonLogic.currentAndNext(
+                lessons = g.lessons, times = g.times, now = now,
+            )
+            if (going == null && upcoming == null) null
+            else FavRows(g.entry, going, upcoming)
+        }
     }
-    if (going == null && upcoming == null) return
+    if (rows.isEmpty()) return
 
     Card(
         Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -114,97 +125,35 @@ fun NextLessonCard(
                     color = LocalAppColors.current.favStar,
                 )
             }
-            if (going != null) {
-                FavLessonLine(going, now = now, onClick = { openFav(favs, going, onOpen) })
-            }
-            if (upcoming != null) {
-                FavLessonLine(upcoming, now = now, onClick = { openFav(favs, upcoming, onOpen) })
+            // Группы по избранному: заголовок отмечает, кому принадлежит пара.
+            // Иначе при двух избранных строки выглядели бы как одна лента, и
+            // непонятно, чья это пара.
+            rows.forEachIndexed { index, row ->
+                if (index > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    HorizontalDivider(
+                        color = LocalAppColors.current.muted.copy(alpha = 0.18f),
+                    )
+                }
+                Text(
+                    favTitle(row.entry),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = LocalAppColors.current.muted,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 1.dp),
+                )
+                row.going?.let {
+                    FavLessonLine(it, now = now) { onOpen(row.entry.role, row.entry.value) }
+                }
+                row.upcoming?.let {
+                    FavLessonLine(it, now = now) { onOpen(row.entry.role, row.entry.value) }
+                }
             }
         }
     }
 }
 
-/**
- * Снимок избранного по всем ролям.
- *
- * Всё избранное, а не только текущей роли: человек может смотреть меню в
- * роли «студент», а в избранном держать преподавателя, и блок обязан показать
- * его пары. Снимок — обычная строка, поэтому его можно класть в ключ
- * remember и сравнивать покомпонентно.
- */
-internal data class FavEntry(val role: Role, val value: String)
-
-internal fun favSnapshot(prefs: GroupPrefs): List<FavEntry> =
-    Role.entries.flatMap { role ->
-        prefs.favGroups(role).sorted().map { FavEntry(role, it) }
-    }
-
-/** Пары и таблица времени по всем избранным значениям. */
-internal data class FavLessonData(
-    val lessons: List<Lesson> = emptyList(),
-    val times: List<PairTime> = emptyList(),
-)
-
-/**
- * Собрать пары из избранного.
- *
- * Только то, что уже лежит в кэше: сеть на первом экране запускать нельзя,
- * меню открывается мгновенно, а полная загрузка расписаний идёт около
- * тридцати секунд. Если кэша ещё нет — блок просто не покажется, и человек
- * увидит его после первого открытия расписания.
- *
- * Лимит на число избранных: разбор одного расписания занимает заметное
- * время, а избранных групп может быть много. Двадцати хватает — на экране
- * всё равно видны две строки, а не сорок.
- */
-internal suspend fun favLessonData(
-    api: MietApi,
-    favs: List<FavEntry>,
-    limit: Int = 20,
-): FavLessonData {
-    val lessons = ArrayList<Lesson>()
-    var times: List<PairTime> = emptyList()
-    for (fav in favs.take(limit)) {
-        // Кэш групп: если избранное есть, а кэша нет, блок пуст и не мешает.
-        val raw = runCatching { api.cachedLessonsOf(fav.role, fav.value) }.getOrNull() ?: continue
-        if (raw.isEmpty()) continue
-        lessons += raw
-        if (times.isEmpty()) times = api.pairTimesFromCache()
-    }
-    if (lessons.isEmpty()) return FavLessonData()
-    return FavLessonData(lessons = lessons, times = mergeTimes(null, lessons))
-}
-
-/**
- * Открыть расписание по нажатой строке.
- *
- * Ведёт в расписание той сущности, у которой эта пара. Роль из избранного,
- * не текущая: строка может принадлежать преподавателю, а меню открыто в
- * роли «студент».
- */
-private fun openFav(
-    favs: List<FavEntry>,
-    hit: NextLessonLogic.Hit,
-    onOpen: (Role, String) -> Unit,
-) {
-    // Сначала ищем по названию группы среди избранных — это точное совпадение.
-    // Если пара принадлежит преподавателю или аудитории, группа в ней может
-    // быть указана, а если нет — берём первый избранный, у которого такая
-    // аудитория или фамилия.
-    val group = hit.lesson.group?.name
-    val room = hit.lesson.room?.name
-    val teacher = hit.lesson.classInfo?.teacherFull
-    val entry = favs.firstOrNull { !group.isNullOrBlank() && it.value == group }
-        ?: favs.firstOrNull { !room.isNullOrBlank() && roomKey(it.value) == roomKey(room) }
-        ?: favs.firstOrNull { !teacher.isNullOrBlank() && TeacherIndex.key(it.value) == TeacherIndex.key(teacher) }
-        ?: favs.firstOrNull()
-    entry ?: return
-    onOpen(entry.role, entry.value)
-}
-
-/**
- * Строка блока с переходом в расписание.
- */
+/** Строка блока с переходом в расписание. */
 @Composable
 private fun FavLessonLine(
     hit: NextLessonLogic.Hit,
@@ -285,6 +234,88 @@ private fun FavLessonLine(
             }
         }
     }
+}
+
+/**
+ * Снимок избранного по всем ролям.
+ *
+ * Всё избранное, а не только текущей роли: человек может смотреть меню в
+ * роли «студент», а в избранном держать преподавателя, и блок обязан показать
+ * его пары. Снимок — обычная строка, поэтому его можно класть в ключ
+ * remember и сравнивать покомпонентно.
+ */
+internal data class FavEntry(val role: Role, val value: String)
+
+internal fun favSnapshot(prefs: GroupPrefs): List<FavEntry> =
+    Role.entries.flatMap { role ->
+        prefs.favGroups(role).sorted().map { FavEntry(role, it) }
+    }
+
+/**
+ * Пары ОДНОГО избранного значения вместе с его таблицей времени.
+ *
+ * Раньше здесь был один список `lessons` на всё избранное, и `currentAndNext`
+ * искал по нему самую раннюю пару. При двух избранных — группа и
+ * преподаватель — победила та, чья пара начиналась раньше, а вторая молча
+ * исчезала: блок отвечал на вопрос «что сейчас» один раз, а не по каждому.
+ */
+internal data class FavLessons(
+    val entry: FavEntry,
+    val lessons: List<Lesson> = emptyList(),
+    val times: List<PairTime> = emptyList(),
+)
+
+/**
+ * Готовые к отрисовке строки одного избранного.
+ *
+ * Раздельно от [FavLessons], потому что здесь уже только то, что рисуется:
+ * пара без времени не показывается, а избранное без пары пропускается целиком.
+ */
+internal data class FavRows(
+    val entry: FavEntry,
+    val going: NextLessonLogic.Hit?,
+    val upcoming: NextLessonLogic.Hit?,
+)
+
+/** Подпись группы строк: чему принадлежит пара. */
+internal fun favTitle(entry: FavEntry): String = when (entry.role) {
+    Role.STUDENT -> entry.value
+    Role.TEACHER -> entry.value
+    Role.AUDIENCE -> "ауд. ${entry.value}"
+}
+
+/**
+ * Собрать пары по каждому избранному отдельно.
+ *
+ * Требование владельца: при двух-трёх избранных показывать информацию по
+ * всем сразу, а не по одному. Раньше пары всех избранных складывались в общий
+ * список, и `currentAndNext` возвращал одну самую раннюю пару на всё
+ * избранное — то есть блок молчал про второе и третье.
+ *
+ * Только то, что уже лежит в кэше: сеть на первом экране запускать нельзя,
+ * меню открывается мгновенно, а полная загрузка расписаний идёт около
+ * тридцати секунд. Если кэша нет — избранное просто не попадёт в блок.
+ *
+ * Лимит на число избранных: разбор одного расписания занимает заметное
+ * время. Двадцати хватает, на экране всё равно видны не все.
+ *
+ * @return по одному [FavLessons] на избранное, у которого есть кэш. Пустых
+ *   нет: показывать строку «пар нет» незачем — блок отвечает на вопрос
+ *   «что сейчас», и такая строка на него не отвечает.
+ */
+internal suspend fun favLessonData(
+    api: MietApi,
+    favs: List<FavEntry>,
+    limit: Int = 20,
+): List<FavLessons> {
+    val out = ArrayList<FavLessons>()
+    for (fav in favs.take(limit)) {
+        val raw = runCatching { api.cachedLessonsOf(fav.role, fav.value) }.getOrNull() ?: continue
+        if (raw.isEmpty()) continue
+        val times = api.pairTimesFromCache()
+        out += FavLessons(entry = fav, lessons = raw, times = mergeTimes(null, raw))
+    }
+    return out
 }
 
 private fun hmText(millis: Long): String {

@@ -207,19 +207,6 @@ fun RolePickerScreen(
             // «О программе» убрана из шапки ради единого места у кнопки
             // обновления, но доступ не потерян: кнопка стоит под списком ролей.
             Spacer(Modifier.height(18.dp))
-
-            // ───────── мини-игра МИЭТ ─────────
-            // Отдельная карточка, а не кнопка в ряду: подпись «Тапать
-            // микросхему» длиннее соседних и в общем ряду либо обрезалась,
-            // либо переносила за собой всю строку. Игра — не служебная
-            // кнопка вроде «Настроек», а то, ради чего её запускают, и
-            // она стоит выше служебных.
-            GameCard(
-                onClick = { onOpenChipGame?.invoke() },
-                enabled = onOpenChipGame != null,
-            )
-
-            Spacer(Modifier.height(14.dp))
             // Настройки и «О программе» — две отдельные кнопки в одном месте.
             // Раньше тему и напоминания приходилось искать внутри «О программе»,
             // а это последний экран перед выходом: настройку ищут перед
@@ -250,6 +237,25 @@ fun RolePickerScreen(
                 TextButton(onClick = onAbout) {
                     Text("О программе", color = MIET_BLUE, fontSize = 13.sp)
                 }
+            }
+
+            // ───────── мини-игра МИЭТ ─────────
+            //
+            // По требованию владельца убрана из отдельной карточки вниз, под
+            // служебные кнопки, и стала простой ссылкой с короткой подписью
+            // «мини-игра». Освободившееся место отдано блоку избранного,
+            // которому при двух-трёх отмеченных сущностях нужна высота.
+            //
+            // Отдельная карточка была заведена потому, что длинная подпись
+            // «Тапать микросхему» не влезала в ряд кнопок. Короткой подписи
+            // ряд достаточно, а отдельная карточка отнимала место в первом
+            // экране приложения.
+            Spacer(Modifier.height(6.dp))
+            TextButton(
+                onClick = { onOpenChipGame?.invoke() },
+                enabled = onOpenChipGame != null,
+            ) {
+                Text("мини-игра", color = LocalAppColors.current.muted, fontSize = 13.sp)
             }
         }
     }
@@ -285,57 +291,6 @@ private fun RoleCard(role: Role, selected: Boolean, onClick: () -> Unit) {
             }
             Text(
                 if (selected) "\u2713" else "\u203a",
-                fontSize = 22.sp,
-                color = MIET_BLUE,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-
-/**
- * Карточка мини-игры в главном меню.
- *
- * Стоит после списка ролей: выбор роли — это вход в приложение, а игра
- * ни с чем не связана и от роли не зависит.
- */
-@Composable
-private fun GameCard(onClick: () -> Unit, enabled: Boolean) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(enabled = enabled, onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Filled.Memory,
-                contentDescription = null,
-                tint = MIET_BLUE,
-                modifier = Modifier.size(30.dp)
-            )
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    GAME_TITLE,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    GAME_TAGLINE,
-                    fontSize = 12.sp,
-                    color = LocalAppColors.current.muted
-                )
-            }
-            Text(
-                "\u203a",
                 fontSize = 22.sp,
                 color = MIET_BLUE,
                 fontWeight = FontWeight.Bold
