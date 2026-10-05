@@ -444,7 +444,12 @@ fun ScheduleScreen(
                         Text(
                             when {
                                 !isCurrentWeek -> "Сегодня: ${DAY_SHORT[todayDay]}"
-                                todayDay == 0 -> "Вс (выходной)"
+                                // На нашей шкале 0 = ПОНЕДЕЛЬНИК, а 6 = воскресенье
+                                // (dayIndexFromCalendar = (cw + 5) % 7). Раньше здесь
+                                // стояло `todayDay == 0`, то есть воскресенье искалось
+                                // под индексом понедельника — и по понедельникам
+                                // кнопка писала «Вс (выходной)».
+                                todayDay == 6 -> "Вс (выходной)"
                                 else -> "Сегодня: ${DAY_SHORT[todayDay]} ${dateShort(todayDay, weekOffset, semestrStartIso)}"
                             },
                             fontSize = 13.sp,
@@ -478,7 +483,8 @@ fun ScheduleScreen(
                             Text(
                                 when {
                                     !isCurrentWeek -> "${WeekType.dayWithDate(todayDay, weekOffset, semestrStartIso)} пар нет"
-                                    todayDay == 0 -> "Воскресенье — выходной"
+                                    // 6 = воскресенье на нашей шкале, а не 0 = понедельник.
+                                    todayDay == 6 -> "Воскресенье — выходной"
                                     else -> "Сегодня ${WeekType.dayWithDate(todayDay, weekOffset, semestrStartIso).lowercase()} пар нет"
                                 },
                                 fontSize = 16.sp, color = LocalAppColors.current.muted
