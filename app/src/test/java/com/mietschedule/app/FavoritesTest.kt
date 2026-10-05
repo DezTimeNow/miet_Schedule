@@ -37,6 +37,17 @@ class FavoritesTest {
 
     private fun src(name: String): String = File(mainDir, name).readText()
 
+    /**
+     * Исходник без комментариев.
+     *
+     * Обязательна для проверок «такого в коде нет»: файлы несут длинные
+     * пояснения, которые цитируют старый сломанный код, и поиск по сырому
+     * тексту находит их вместо кода.
+     */
+    private fun stripComments(source: String): String =
+        source.replace(Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL), "")
+            .replace(Regex("""//[^\n]*"""), "")
+
     // ── Доступность кнопки ────────────────────────────────────────────────
 
     @Test
@@ -87,11 +98,12 @@ class FavoritesTest {
     fun `из избранного открывается сразу расписание`() {
         val s = src("MainActivity.kt")
         val onOpen = s.substringAfter("onOpen = { r, value ->").substringBefore("\n            },")
+        // Переход идёт через goTo, а не прямым присваиванием: прямой потерял бы
+        // метку происхождения и назад ушёл бы в список групп вместо избранного.
         assertTrue(
-            "Из избранного ведёт не в SCHEDULE, а в ${
-                Regex("screen = (\\w+)").find(onOpen)?.groupValues?.get(1)
-            }",
-            onOpen.contains("screen = Screen.SCHEDULE"),
+            "Из избранного ведёт не в SCHEDULE, а в " +
+                (Regex("""goTo\((Screen\.\w+)\)""").find(onOpen)?.groupValues?.get(1) ?: "никуда"),
+            onOpen.contains("goTo(Screen.SCHEDULE)"),
         )
         assertTrue(
             "Из избранного всё ещё ведёт в выбор сущности",
@@ -209,7 +221,7 @@ class FavoritesTest {
         val s = src("MainActivity.kt")
         assertTrue(
             "Назад из избранного не через backTargetFor",
-            s.contains("onBack = { screen = backTargetFor(Screen.FAVORITES, selection != null) }"),
+            s.contains("backTargetFor(Screen.FAVORITES, selection != null, screenOrigin)"),
         )
     }
 
@@ -228,18 +240,39 @@ class FavoritesTest {
         // Расписание обязано помнить, что открыто из избранного, иначе
         // назад с него уводит в список групп — туда, откуда человек
         // в избранное не заходил.
+        //
+        // Происхождение теперь общий счётчик screenOrigin, а не отдельная
+        // метка расписания: его проставляет goTo, через который идёт любой
+        // переход. Поэтому проверяем правило, а не прежнее имя переменной:
+        // текстовая проверка на scheduleOrigin перестала бы что-либо
+        // защищать после перехода на общий механизм.
         val s = src("MainActivity.kt")
+        assertTrue(
+            "Переходы должны идти через goTo: он запоминает, откуда пришли",
+            s.contains("fun goTo(target: Screen)"),
+        )
         val favoritesBlock = s.substringAfter("Screen.FAVORITES -> FavoritesScreen(")
         assertTrue(
-            "Открытие из избранного не ставит происхождение FAVORITES",
-            favoritesBlock.contains("scheduleOrigin = Screen.FAVORITES"),
+            "Открытие из избранного не идёт через goTo, поэтому происхождение " +
+                "не запоминается и назад уведёт в список групп",
+            favoritesBlock.contains("goTo(Screen.SCHEDULE)"),
         )
-        // И наоборот: выбор сущности со своего экрана происхождение сбрасывает,
-        // иначе после «избранное → расписание → выбор группы → назад»
-        // человек попал бы в избранное вместо списка групп.
+    }
+
+    @Test
+    fun `каждый переход в подменный экран запоминает происхождение`() {
+        // Прямой `screen = Screen.ABOUT` забыл бы метку, и «Назад» ушёл бы по
+        // правилу экрана (по наличию сохранённой группы), а не по факту
+        // входа. Именно это ломало переход из главного меню.
+        val s = stripComments(src("MainActivity.kt"))
+        val direct = Regex("""screen\s*=\s*Screen\.(ABOUT|SETTINGS|FAVORITES|CHIP_GAME|REPORT)""")
+            .findAll(s)
+            .map { it.value }
+            .toList()
         assertTrue(
-            "Вход в расписание не из избранного не ставит происхождение PICK_ENTITY",
-            s.contains("scheduleOrigin = Screen.PICK_ENTITY"),
+            "Прямые переходы в подменные экраны обходят goTo и теряют " +
+                "происхождение: $direct",
+            direct.isEmpty(),
         )
     }
 
@@ -252,7 +285,7 @@ class FavoritesTest {
         val s = src("MainActivity.kt")
         assertTrue(
             "Стрелка «‹» идёт мимо backTargetFor",
-            s.contains("screen = backTargetFor(Screen.SCHEDULE, selection != null, scheduleOrigin)"),
+            s.contains("screen = backTargetFor(Screen.SCHEDULE, selection != null, screenOrigin)"),
         )
     }
 

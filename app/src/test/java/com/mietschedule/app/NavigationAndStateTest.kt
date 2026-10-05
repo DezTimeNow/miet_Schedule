@@ -110,13 +110,69 @@ class NavigationAndStateTest {
     }
 
     @Test
-    fun `из программы с выбором назад ведёт на выбор сущности`() {
-        assertEquals(Screen.PICK_ENTITY, backTargetFor(Screen.ABOUT, hasSelection = true))
+    fun `из программы открытой из меню назад ведёт в меню`() {
+        // Жалоба владельца: из «О программе», открытого из ГЛАВНОГО МЕНЮ,
+        // назад уводил в список групп. Решение принималось по наличию
+        // сохранённого выбора, а не по источнику, из-за чего «О программе»
+        // навигационно приросло к подменю «студент».
+        assertEquals(
+            Screen.PICK_ROLE,
+            backTargetFor(Screen.ABOUT, hasSelection = true, origin = Screen.PICK_ROLE),
+        )
     }
 
     @Test
-    fun `из программы без выбора назад ведёт на выбор роли`() {
+    fun `из программы открытой из списка сущностей назад ведёт в список`() {
+        // Тот же экран, но другой вход: источник известен, значит и возврат
+        // другой. Раньше оба входа давали одинаковый ответ по hasSelection.
+        assertEquals(
+            Screen.PICK_ENTITY,
+            backTargetFor(Screen.ABOUT, hasSelection = true, origin = Screen.PICK_ENTITY),
+        )
+    }
+
+    @Test
+    fun `назад ведёт туда откуда пришли для всех подменных экранов`() {
+        // Правило единое, а не частное для расписания: любой экран, у которого
+        // есть входы из нескольких мест, возвращает туда, откуда вошли.
+        for (screen in listOf(
+            Screen.ABOUT, Screen.SETTINGS, Screen.FAVORITES, Screen.CHIP_GAME, Screen.REPORT,
+        )) {
+            for (origin in listOf(Screen.PICK_ROLE, Screen.PICK_ENTITY, Screen.FAVORITES)) {
+                if (origin == screen) continue
+                assertEquals(
+                    "экран $screen из $origin вернул не туда",
+                    origin,
+                    backTargetFor(screen, hasSelection = true, origin = origin),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `без источника работает правило экрана`() {
+        // Источник неизвестен только при холодном старте или если экран открыт
+        // не через goTo. Тогда действует таблица: из «О программе» без
+        // выбора — в меню, с выбором — в список сущностей (старое поведение).
         assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.ABOUT, hasSelection = false))
+        assertEquals(Screen.PICK_ENTITY, backTargetFor(Screen.ABOUT, hasSelection = true))
+        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.FAVORITES, hasSelection = true))
+        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.SETTINGS, hasSelection = true))
+        assertEquals(Screen.PICK_ROLE, backTargetFor(Screen.CHIP_GAME, hasSelection = true))
+    }
+
+    @Test
+    fun `источник равный экрану не ведёт в себя`() {
+        // Расписание открыло расписание (в базе не встречается) и подобное.
+        // Без проверки назад зациклился бы на месте.
+        assertEquals(
+            Screen.PICK_ENTITY,
+            backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.SCHEDULE),
+        )
+        assertEquals(
+            Screen.PICK_ROLE,
+            backTargetFor(Screen.ABOUT, hasSelection = false, origin = Screen.ABOUT),
+        )
     }
 
     @Test
