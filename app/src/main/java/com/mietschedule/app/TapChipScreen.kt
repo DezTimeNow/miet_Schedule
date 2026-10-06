@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,6 +53,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -454,6 +460,31 @@ fun TapChipScreen(onBack: () -> Unit) {
                     // ── микросхема ────────────────────────────────────
                     val pressAmt = press.value
 
+                    // Засчитать очко. Один путь и для тапа пальцем, и для
+                    // нажатия через экранный диктор: раньше начисление жило
+                    // прямо в обработчике тапа, а микросхема не имела
+                    // семантики — с включённым TalkBack в игру нельзя было
+                    // играть вообще, диктору нечего было нажимать.
+                    //
+                    // Пауза между тапами проверяется здесь же: без неё
+                    // авто-повтор при удержании даёт сотни очков в секунду.
+                    val awardPoint: () -> Unit = {
+                        val now = System.currentTimeMillis()
+                        if (now - lastTapAt >= ChipTop.MIN_TAP_GAP_MS) {
+                            lastTapAt = now
+                            score += 1
+                            // Аналитика: засчитанный тап.
+                            Analytics.reportScore(score)
+                            // Вспышка при тапе: 1 → 0 за 380 мс.
+                            // animatable-функции suspend, а обработчик —
+                            // обычный, поэтому запуск отдельный.
+                            scope.launch {
+                                counterScale.snapTo(1.18f)
+                                counterScale.animateTo(1f, tween(220))
+                            }
+                        }
+                    }
+
                     Box(
                         Modifier
                             .fillMaxWidth()
@@ -480,6 +511,17 @@ fun TapChipScreen(onBack: () -> Unit) {
                         Box(
                             Modifier
                                 .fillMaxSize()
+                                // Семантика нужна экранному диктору:
+                                // без неё микросхема для TalkBack —
+                                // просто картинка без действия.
+                                .semantics {
+                                    contentDescription = "Микросхема"
+                                    role = Role.Button
+                                    onClick(label = "Добавить очко") {
+                                        awardPoint()
+                                        true
+                                    }
+                                }
                                 .pointerInput(Unit) {
                                     detectTapGestures(
                                         onPress = {
@@ -487,27 +529,7 @@ fun TapChipScreen(onBack: () -> Unit) {
                                             tryAwaitRelease()
                                             press.animateTo(0f, tween(160))
                                         },
-                                        onTap = {
-                                            val now = System.currentTimeMillis()
-                                            // Пауза между тапами: без неё
-                                            // авто-повтор при удержании
-                                            // даёт сотни очков в секунду.
-                                            if (now - lastTapAt < ChipTop.MIN_TAP_GAP_MS) {
-                                                return@detectTapGestures
-                                            }
-                                            lastTapAt = now
-                                            score += 1
-                                            // Аналитика: засчитанный тап.
-                                            Analytics.reportScore(score)
-                                            // Вспышка при тапе: 1 → 0 за 380 мс.
-                                            // animatable-функции suspend, а
-                                            // onTap — обычный обработчик, поэтому
-                                            // запуск отдельный.
-                                            scope.launch {
-                                                counterScale.snapTo(1.18f)
-                                                counterScale.animateTo(1f, tween(220))
-                                            }
-                                        },
+                                        onTap = { awardPoint() },
                                     )
                                 }
                         )
@@ -516,18 +538,14 @@ fun TapChipScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(10.dp))
 
                     // ── ник ──────────────────────────────────────────
+                    // Правила открываются иконкой «?» рядом с карандашом.
+                    // Отдельной строкой они занимали высоту и сдвигали
+                    // таблицу игроков вниз — на экране игры это заметно.
                     NickRow(
                         nick = nick,
                         onChange = { editingNick = true },
+                        onRules = { showRules = true },
                     )
-
-                    // Ссылка на правила. Строка, а не раскрывающийся блок:
-                    // раскрытие меняло бы высоту и толкало таблицу игроков
-                    // вниз. Сами правила показываются всплывающим окном,
-                    // поверх экрана, поэтому вёрстка остаётся на месте.
-                    TextButton(onClick = { showRules = true }) {
-                        Text("Правила", fontSize = 14.sp, color = MIET_BLUE)
-                    }
 
                     Spacer(Modifier.height(20.dp))
                     Leaderboard(top)
@@ -592,6 +610,33 @@ internal fun rankLabel(rank: Int): String? = when {
 }
 
 /**
+ * Сколько осталось до обнуления недели.
+ *
+ * Значение приходит с сервера вместе с топом (`resetsAt`) и раньше нигде
+ * не показывалось: в правилах сказано «обнуляется по понедельникам в
+ * 09:00», но сколько именно осталось, игрок не видел.
+ *
+ * Возвращает null, когда показывать нечего: сервер не сообщил срок
+ * (старый скрипт) или он уже прошёл. Пустая строка в этом случае оставила
+ * бы лишний зазор под заголовком топа.
+ *
+ * Часы и дни — сокращениями: «через 3 ч.» и «через 3 дн.» не требуют
+ * согласования падежа, в отличие от «3 часа» и «3 дня».
+ */
+internal fun resetLabel(resetsAtMillis: Long, nowMillis: Long): String? {
+    if (resetsAtMillis <= 0L) return null
+    val left = resetsAtMillis - nowMillis
+    if (left <= 0L) return null
+    val hours = left / 3_600_000L
+    return when {
+        hours < 1L -> "обнуление меньше чем через час"
+        hours < 24L -> "обнуление через $hours ч."
+        hours < 48L -> "обнуление завтра"
+        else -> "обнуление через ${hours / 24L} дн."
+    }
+}
+
+/**
  * Геометрия счётчика очков.
  *
  * Высота задана явно, потому что счётчик теперь анимируется масштабом, а
@@ -614,9 +659,9 @@ private const val PLACE_BOX_HEIGHT = 22
 // вёрстку.
 private const val REJECT_BOX_HEIGHT = 20
 
-/** Имя игрока и кнопка смены. */
+/** Имя игрока и кнопки: смена имени и правила. */
 @Composable
-private fun NickRow(nick: String, onChange: () -> Unit) {
+private fun NickRow(nick: String, onChange: () -> Unit, onRules: () -> Unit) {
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -640,6 +685,16 @@ private fun NickRow(nick: String, onChange: () -> Unit) {
             Icon(
                 Icons.Filled.Edit,
                 contentDescription = "Сменить имя",
+                tint = MIET_BLUE,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        // Правила — иконкой, а не строкой: строка добавляла высоту и
+        // сдвигала «Топ игроков» вниз.
+        IconButton(onClick = onRules) {
+            Icon(
+                Icons.AutoMirrored.Filled.Help,
+                contentDescription = "Правила",
                 tint = MIET_BLUE,
                 modifier = Modifier.size(18.dp),
             )
@@ -775,7 +830,8 @@ private fun NickDialog(
  */
 @Composable
 private fun Leaderboard(top: ChipTop.Top?) {
-    val list = top?.rows ?: return
+    val board = top ?: return
+    val list = board.rows
     Text(
         "Топ игроков",
         fontSize = 15.sp,
@@ -783,6 +839,17 @@ private fun Leaderboard(top: ChipTop.Top?) {
         color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth(),
     )
+    // Сколько осталось до обнуления. Срок приходит с сервером вместе с
+    // топом; если сервер его не сообщил — строки нет.
+    resetLabel(board.resetsAtMillis, System.currentTimeMillis())?.let { left ->
+        Spacer(Modifier.height(2.dp))
+        Text(
+            left,
+            fontSize = 12.sp,
+            color = LocalAppColors.current.muted,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
     Spacer(Modifier.height(6.dp))
 
     if (list.isEmpty()) {

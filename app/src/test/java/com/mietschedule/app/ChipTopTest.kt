@@ -992,8 +992,8 @@ class ChipTopTest {
         )
         val screen = srcFile("TapChipScreen.kt")
         assertTrue(
-            "обработчик тапа должен сверяться с константой",
-            screen.contains("now - lastTapAt < ChipTop.MIN_TAP_GAP_MS")
+            "начисление очка должно сверяться с константой",
+            screen.contains("now - lastTapAt >= ChipTop.MIN_TAP_GAP_MS"),
         )
     }
 
@@ -1030,11 +1030,13 @@ class ChipTopTest {
         val about = srcFile("AboutScreen.kt")
         val blocks: List<String> = Regex("""AboutBlock\(\s*\n\s*"([^"]+)"""").findAll(about).map { m: MatchResult -> m.groupValues[1] }.toList()
 
-        assertEquals("ожидалось 6 коротких блоков описания", 6, blocks.size)
+        assertEquals("ожидалось 7 коротких блоков описания", 7, blocks.size)
         assertTrue("нет блока про ближайшие пары", blocks.any { it.contains("Ближайшие пары") })
         assertTrue("нет блока про избранное", blocks.any { it.contains("Избранное") })
         assertTrue("нет блока про мини-игру", blocks.any { it.contains("Тапать микросхему") })
         assertTrue("нет блока про обновления", blocks.any { it.contains("Обновления") })
+        // Требование от 0.68: в интерфейсе не было ни слова про аналитику.
+        assertTrue("нет блока про аналитику", blocks.any { it.contains("Аналитика") })
         // Ссылка на исходники: требование от 0.66.
         assertTrue("нет ссылки на GitHub", about.contains("Исходный код на GitHub"))
         assertTrue(
@@ -1895,7 +1897,7 @@ class ChipTopTest {
         // Окно — AlertDialog, тот же элемент, что и ввод имени: нового
         // вида окна в приложении не появляется.
         val dialog = game.substringAfter("private fun RulesDialog")
-            .substringBefore("/** Текст правил")
+            .substringBefore("internal const val RULES_TEXT")
         assertTrue("правила должны рисоваться AlertDialog", dialog.contains("AlertDialog("))
         assertTrue("у окна должна быть кнопка закрытия", dialog.contains("\"Понятно\""))
         // В потоке игрового экрана текста правил быть не должно: там он
@@ -1904,6 +1906,87 @@ class ChipTopTest {
         assertFalse(
             "текст правил не должен стоять блоком в потоке",
             body.contains("RULES_TEXT"),
+        )
+        // Строка «Правила» отдельной строкой больше не занимает высоту:
+        // правила открываются иконкой в блоке с именем.
+        assertFalse(
+            "строка «Правила» не должна быть отдельной кнопкой в потоке",
+            body.contains("TextButton(onClick = { showRules = true })"),
+        )
+        assertTrue(
+            "правила должны открываться из блока с именем",
+            game.contains("onRules = { showRules = true }"),
+        )
+    }
+
+    /**
+     * До экранного диктора игра доводит.
+     *
+     * Найдено при разборе: микросхема была картинкой без семантики и без
+     * действия, поэтому с включённым TalkBack играть было нельзя вообще —
+     * диктору нечего нажать. Теперь у микросхемы есть описание и действие,
+     * а начисление очка живёт в одном месте: и тап пальцем, и нажатие
+     * диктором идут через него.
+     */
+    @Test
+    fun `микросхема доступна экранному диктору`() {
+        val game = srcFile("TapChipScreen.kt")
+
+        assertTrue(
+            "у микросхемы должно быть описание для диктора",
+            game.contains("contentDescription = \"Микросхема\""),
+        )
+        assertTrue(
+            "у микросхемы должно быть действие для диктора",
+            game.contains("onClick(label = \"Добавить очко\")"),
+        )
+        assertTrue(
+            "нужна роль кнопки, иначе диктор не поймёт, что с ней делать",
+            game.contains("role = Role.Button"),
+        )
+        // Пауза между очками обязана проверяться в общем пути, а не в
+        // обработчике тапа: иначе диктор обходил бы ограничение.
+        val award = game.substringAfter("val awardPoint")
+            .substringBefore("Box(")
+        assertTrue(
+            "ограничение скорости должно жить в общем пути начисления",
+            award.contains("ChipTop.MIN_TAP_GAP_MS"),
+        )
+        assertEquals(
+            "обработчик тапа должен звать общий путь",
+            1,
+            Regex("""onTap = \{ awardPoint\(\) \}""").findAll(game).count(),
+        )
+    }
+
+    /**
+     * Срок обнуления недели показывается игроку.
+     *
+     * Сервер отдаёт `resetsAt`, приложение его разбирало и покрыло тестом,
+     * но на экране значение не использовалось: игрок читал «обнуляется по
+     * понедельникам в 09:00» и не понимал, сколько осталось.
+     */
+    @Test
+    fun `срок обнуления недели показывается`() {
+        val now = 1_800_000_000_000L
+        val hour = 3_600_000L
+
+        assertNull("сервер не сообщил срок — строки нет", resetLabel(0L, now))
+        assertNull("срок уже прошёл — строки нет", resetLabel(now - hour, now))
+        assertEquals(
+            "меньше часа",
+            "обнуление меньше чем через час",
+            resetLabel(now + 30 * 60_000L, now),
+        )
+        assertEquals("через 5 ч.", "обнуление через 5 ч.", resetLabel(now + 5 * hour, now))
+        assertEquals("завтра", "обнуление завтра", resetLabel(now + 30 * hour, now))
+        assertEquals("через 3 дн.", "обнуление через 3 дн.", resetLabel(now + 72 * hour, now))
+
+        // И строка действительно выводится на экране игры.
+        val game = srcFile("TapChipScreen.kt")
+        assertTrue(
+            "срок должен выводиться рядом с топом",
+            game.contains("resetLabel(board.resetsAtMillis"),
         )
     }
 
