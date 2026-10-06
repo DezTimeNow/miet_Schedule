@@ -51,13 +51,22 @@ import kotlinx.coroutines.withContext
  * пустом избранном блока нет — показывать нечего, и пустая плашка только
  * занимала бы место над кнопками ролей.
  *
- * Данные берутся из кэша расписаний на IO-диспетчере: разбор 344 расписаний
+ * Данные берутся из кэша расписаний на IO-диспетчере: разбор 343 расписаний
  * на главном потоке давал ANR, а этот блок стоит на первом экране и запускается
  * при каждом открытии меню.
  */
 
 /** Высота заглушки блока, пока читается кэш расписаний. */
 private val BLOCK_PLACEHOLDER_HEIGHT = 96.dp
+
+/**
+ * Подпись блока на главной.
+ *
+ * Требование владельца от 0.66: «верхний блок Избранное переименовать в
+ * ближайшие пары». Название точнее описывает содержимое: в блоке не список
+ * избранного, а его ближайшие пары — что идёт сейчас и что дальше.
+ */
+internal const val FAV_BLOCK_TITLE = "Ближайшие пары"
 
 @Composable
 fun NextLessonCard(
@@ -107,7 +116,7 @@ fun NextLessonCard(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "Избранное",
+                    FAV_BLOCK_TITLE,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = LocalAppColors.current.favStar,
@@ -166,7 +175,7 @@ fun NextLessonCard(
                 // стоит на главной отдельными кнопками, и второго входа в
                 // него здесь быть не должно.
                 Text(
-                    "Избранное",
+                    FAV_BLOCK_TITLE,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = LocalAppColors.current.favStar,

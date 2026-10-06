@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
@@ -19,6 +21,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -36,6 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Send
 
 import androidx.compose.runtime.mutableStateOf
@@ -230,21 +234,34 @@ fun AboutScreen(
             // их ищут перед использованием, а «О программе» открывают,
             // когда хотят почитать о приложении. Доступ — с главного экрана.
 
-            // Описание переписано целиком: шесть блоков по четыре строки
-            // читались как справка и половину никто не домотал. Здесь
-            // четыре коротких — про то, чем человек пользуется каждый день.
+            // Описание переписано под интерфейс 0.65–0.66 по требованию
+            // владельца: блок на главной теперь называется «Ближайшие пары»,
+            // избранное живёт списком кнопок, а добавление — кнопкой
+            // «Добавить». Прежний текст описывал экраны, которых уже нет.
             AboutBlock(
-                "Расписание",
-                "Загружается с сайта МИЭТ и хранится на телефоне. " +
-                "Повторно в интернет почти не ходит, поэтому открывается " +
-                "быстро. Без сети показывает то, что уже сохранено."
+                "Ближайшие пары",
+                "На главной видно, что идёт сейчас и что дальше: предмет, " +
+                "аудитория, преподаватель и через сколько начнётся. " +
+                "Если пара идёт, так и написано. Отсчёт обновляется сам."
             )
 
             AboutBlock(
-                "Преподаватель и аудитория",
-                "Расписания преподавателей и занятость аудиторий " +
-                "приложение собирает само из расписаний групп: " +
-                "ищет пары по фамилии и по номеру помещения."
+                "Избранное",
+                "Группа, преподаватель или аудитория отмечаются звездой и " +
+                "появляются на главной списком. Нажатие открывает расписание " +
+                "сразу. Добавить — кнопкой «Добавить»."
+            )
+
+            AboutBlock(
+                "Работает без интернета",
+                "Расписание загружается с сайта МИЭТ и хранится на телефоне. " +
+                "Без сети показывается то, что уже сохранено."
+            )
+
+            AboutBlock(
+                "Напоминания",
+                "За 1, 5, 10 или 15 минут до начала пары. Включаются в " +
+                "«Настройках» и работают без интернета."
             )
 
             AboutBlock(
@@ -260,6 +277,35 @@ fun AboutScreen(
                 "релиз. Скачанный файл сверяется по контрольной сумме — " +
                 "битый или подменённый не установится."
             )
+
+            // ───────── исходный код ─────────
+            //
+            // Требование владельца от 0.66: «в о программе добавить ссылку на
+            // гитхаб». Адрес берётся из UpdateChecker.REPO — того же места,
+            // откуда приложение спрашивает релизы, чтобы адрес не разъехался
+            // между двумя строками.
+            TextButton(
+                onClick = {
+                    runCatching {
+                        ctx.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/" + UpdateChecker.REPO),
+                            )
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    Icons.Filled.Link,
+                    contentDescription = null,
+                    tint = MIET_BLUE,
+                    modifier = Modifier.size(17.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Исходный код на GitHub", color = MIET_BLUE, fontSize = 13.sp)
+            }
 
 
             Spacer(Modifier.height(6.dp))

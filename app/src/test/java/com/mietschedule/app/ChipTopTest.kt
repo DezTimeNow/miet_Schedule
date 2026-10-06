@@ -476,7 +476,9 @@ class ChipTopTest {
     @Test
     fun `название мини-игры общее для меню и игры`() {
         assertEquals("Тапать микросхему", GAME_TITLE)
-        assertEquals("мини-игра", GAME_TAGLINE)
+        // Требование от 0.66: ссылка в подменю главной — с заглавной буквы,
+        // как соседние «Настройки» и «О программе».
+        assertEquals("Мини-игра", GAME_TAGLINE)
         val game = srcFile("TapChipScreen.kt")
         assertTrue("Заголовок игры берёт название из константы", game.contains("GAME_TITLE"))
     }
@@ -1015,17 +1017,30 @@ class ChipTopTest {
     }
 
     /**
-     * В «О программе» шесть простыней заменены на четыре коротких блока.
+     * Описание в «О программе» — короткие блоки про то, чем пользуются.
+     *
+     * Требование от 0.66: «описание в программе переписать» и «в о программе
+     * добавить ссылку на гитхаб». Прежний текст описывал экраны, которых в
+     * 0.65–0.66 уже нет: выбор роли как отдельный экран и избранное как
+     * экран с вкладками. Теперь блок на главной называется «Ближайшие пары»,
+     * избранное живёт списком кнопок, добавление — кнопкой «Добавить».
      */
     @Test
     fun `описание в о программе короткое и про мини-игру`() {
         val about = srcFile("AboutScreen.kt")
         val blocks: List<String> = Regex("""AboutBlock\(\s*\n\s*"([^"]+)"""").findAll(about).map { m: MatchResult -> m.groupValues[1] }.toList()
 
-        assertEquals("ожидалось 4 блока, а не 6 простыней", 4, blocks.size)
+        assertEquals("ожидалось 6 коротких блоков описания", 6, blocks.size)
+        assertTrue("нет блока про ближайшие пары", blocks.any { it.contains("Ближайшие пары") })
+        assertTrue("нет блока про избранное", blocks.any { it.contains("Избранное") })
         assertTrue("нет блока про мини-игру", blocks.any { it.contains("Тапать микросхему") })
-        assertTrue("нет блока про расписание", blocks.any { it.contains("Расписание") })
         assertTrue("нет блока про обновления", blocks.any { it.contains("Обновления") })
+        // Ссылка на исходники: требование от 0.66.
+        assertTrue("нет ссылки на GitHub", about.contains("Исходный код на GitHub"))
+        assertTrue(
+            "адрес ссылки не берётся из UpdateChecker.REPO",
+            about.contains("UpdateChecker.REPO"),
+        )
 
         // Убрано то, что было лишним: пересказ про 6 часов и про кэш дважды.
         assertFalse(about.contains("не чаще раза в 6 часов"))
