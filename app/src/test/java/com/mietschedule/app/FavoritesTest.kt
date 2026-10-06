@@ -52,25 +52,48 @@ class FavoritesTest {
     // ── Доступность кнопки ────────────────────────────────────────────────
 
     /**
-     * Избранное открывается из подписи над блоком пар, а не отдельной кнопкой.
+     * Список избранного на главной: кнопка на каждое избранное.
      *
-     * Требование владельца от 0.62: «подпись блока Избранное станет кнопкой,
-     * второй кнопки не нужно». Кнопка в подменю убрана, вход один — здесь.
+     * Требование владельца от 0.65: «кнопку избранное и меню избранное убираем
+     * с главной, вместо неё делаем на главной список Избранное и дальше кнопки
+     * для быстрого доступа на расписание, которое было добавлено в избранное».
      */
     @Test
-    fun `избранное открывается из подписи над блоком пар`() {
+    fun `на главной список избранного кнопками`() {
         // Комментарии цитируют старую подпись как объяснение правки, поэтому
         // ищем по коду без них — иначе тест падает на собственном комментарии.
-        val card = stripComments(src("NextLessonCard.kt"))
+        val home = stripComments(src("HomeScreen.kt"))
         assertTrue(
-            "Подпись блока должна быть кнопкой открытия избранного",
-            card.contains("onOpenFavorites"),
+            "На главной нет списка избранного",
+            home.contains("favSnapshot(prefs)"),
         )
-        // В подписи больше нет «что сейчас»: она обещала пояснение, а
-        // пояснять было нечего — сам блок и есть ответ.
+        assertTrue(
+            "Кнопка избранного не открывает расписание",
+            home.contains("onOpenFavorite(entry.role, entry.value)"),
+        )
+        assertTrue(
+            "Нет пояснения при пустом избранном",
+            home.contains("FAV_EMPTY_HINT"),
+        )
+        // Второго входа в избранное быть не должно: ни карточки, ни подписи-кнопки.
+        assertTrue(
+            "На главной осталась карточка «Избранное»",
+            !home.contains("title = \"Избранное\""),
+        )
         assertFalse(
             "В подписи блока не должно остаться слов «что сейчас»",
-            card.contains("что сейчас"),
+            stripComments(src("NextLessonCard.kt")).contains("что сейчас"),
+        )
+    }
+
+    /** Единственный вход в выбор группы, преподавателя и аудитории. */
+    @Test
+    fun `на главной есть кнопка добавления`() {
+        val home = stripComments(src("HomeScreen.kt"))
+        assertTrue("Нет кнопки «Добавить»", home.contains("title = \"Добавить\""))
+        assertTrue(
+            "Кнопка добавления не ведёт на экран выбора",
+            home.contains("onClick = onAdd"),
         )
     }
 
@@ -113,7 +136,7 @@ class FavoritesTest {
     @Test
     fun `из избранного открывается сразу расписание`() {
         val s = src("MainActivity.kt")
-        val onOpen = s.substringAfter("onOpen = { r, value ->").substringBefore("\n            },")
+        val onOpen = s.substringAfter("fun openFromMenu(").substringBefore("\n    }")
         // Переход идёт через goTo, а не прямым присваиванием: прямой потерял бы
         // метку происхождения и назад ушёл бы в список групп вместо избранного.
         assertTrue(
@@ -130,7 +153,7 @@ class FavoritesTest {
     @Test
     fun `преподавателю из избранного передаётся ключ ФИО`() {
         val s = src("MainActivity.kt")
-        val onOpen = s.substringAfter("onOpen = { r, value ->").substringBefore("\n            },")
+        val onOpen = s.substringAfter("fun openFromMenu(").substringBefore("\n    }")
         // teacherCode для преподавателя — нормализованное ФИО, а не пустая
         // строка: с пустой lessonsOf ничего не находит.
         assertTrue(
@@ -142,7 +165,7 @@ class FavoritesTest {
     @Test
     fun `аудитории из избранного находится внутренний код`() {
         val s = src("MainActivity.kt")
-        val onOpen = s.substringAfter("onOpen = { r, value ->").substringBefore("\n            },")
+        val onOpen = s.substringAfter("fun openFromMenu(").substringBefore("\n    }")
         assertTrue(
             "Для аудитории не ищется код по названию",
             onOpen.contains("audienceCodeByName"),
@@ -161,7 +184,7 @@ class FavoritesTest {
         assertTrue("Нет GroupPrefs.saveFor(role, value)", prefs.contains("fun saveFor("))
 
         val s = src("MainActivity.kt")
-        val onOpen = s.substringAfter("onOpen = { r, value ->").substringBefore("\n            },")
+        val onOpen = s.substringAfter("fun openFromMenu(").substringBefore("\n    }")
         assertTrue(
             "Выбор сохраняется через saveFor, а не save()",
             onOpen.contains("prefs.saveFor(r"),
@@ -189,22 +212,12 @@ class FavoritesTest {
     }
 
     @Test
-    fun `звезда в списке избранного означает удаление а не добавление`() {
-        val s = src("FavoritesScreen.kt")
-        assertTrue(
-            "Звезда в избранном подписана как добавление",
-            s.contains("\"Убрать из избранного\""),
-        )
-        assertTrue("Звезда не вызывает toggleFavFor", s.contains("prefs.toggleFavFor(current.first, value)"))
-    }
-
-    @Test
     fun `открытие избранного не сбрасывает выбор роли`() {
         // onOpen должен вызывать saveRole(r) ДО saveFor(r, ...): saveFor берёт
         // роль параметром, а save() — из хранилища. Проверяем, что порядок
         // в коде не нарушен, иначе после перезапуска откроется чужая роль.
         val s = src("MainActivity.kt")
-        val onOpen = s.substringAfter("onOpen = { r, value ->").substringBefore("\n            },")
+        val onOpen = s.substringAfter("fun openFromMenu(").substringBefore("\n    }")
         val saveRoleAt = onOpen.indexOf("prefs.saveRole(r)")
         val saveForAt = onOpen.indexOf("prefs.saveFor(r")
         assertTrue("Нет saveRole(r)", saveRoleAt >= 0)
@@ -220,7 +233,7 @@ class FavoritesTest {
         // Параметр onOpenFavorites больше не существует — если он где-то
         // остался, это либо ошибка компиляции, либо мёртвый код.
         val screens = listOf(
-            "AboutScreen.kt", "FavoritesScreen.kt", "GroupPickerUi.kt",
+            "AboutScreen.kt", "HomeScreen.kt", "GroupPickerUi.kt",
             "PickersScreen.kt", "ScheduleUi.kt", "SettingsScreen.kt",
         )
         for (name in screens) {
@@ -230,49 +243,6 @@ class FavoritesTest {
                 !s.contains("onOpenFavorites"),
             )
         }
-    }
-
-    @Test
-    fun `переход назад из избранного ведёт туда же куда и стрелка`() {
-        val s = src("MainActivity.kt")
-        assertTrue(
-            "Назад из избранного не через backTargetFor",
-            s.contains("backTargetFor(Screen.FAVORITES, selection != null, screenOrigin)"),
-        )
-    }
-
-    @Test
-    fun `назад из избранного ведёт в меню а не вперёд на расписание`() {
-        // Жалоба владельца: из избранного назад приводил на расписание,
-        // потому что backTargetFor для FAVORITES отдавал SCHEDULE при
-        // сохранённой группе. Проверяем само правило, а не текст: правило
-        // живёт в функции, и текстовый тест его не защищает — при
-        // переписывании строки он продолжал бы «проходить».
-        assertEquals(Screen.HOME, backTargetFor(Screen.FAVORITES, hasSelection = true))
-    }
-
-    @Test
-    fun `открытие из избранного помечает происхождение для кнопки назад`() {
-        // Расписание обязано помнить, что открыто из избранного, иначе
-        // назад с него уводит в список групп — туда, откуда человек
-        // в избранное не заходил.
-        //
-        // Происхождение теперь общий счётчик screenOrigin, а не отдельная
-        // метка расписания: его проставляет goTo, через который идёт любой
-        // переход. Поэтому проверяем правило, а не прежнее имя переменной:
-        // текстовая проверка на scheduleOrigin перестала бы что-либо
-        // защищать после перехода на общий механизм.
-        val s = src("MainActivity.kt")
-        assertTrue(
-            "Переходы должны идти через goTo: он запоминает, откуда пришли",
-            s.contains("fun goTo(target: Screen)"),
-        )
-        val favoritesBlock = s.substringAfter("Screen.FAVORITES -> FavoritesScreen(")
-        assertTrue(
-            "Открытие из избранного не идёт через goTo, поэтому происхождение " +
-                "не запоминается и назад уведёт в список групп",
-            favoritesBlock.contains("goTo(Screen.SCHEDULE)"),
-        )
     }
 
     @Test

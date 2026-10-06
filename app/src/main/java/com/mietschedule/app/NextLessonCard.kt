@@ -56,21 +56,15 @@ import kotlinx.coroutines.withContext
  * при каждом открытии меню.
  */
 
+/** Высота заглушки блока, пока читается кэш расписаний. */
+private val BLOCK_PLACEHOLDER_HEIGHT = 96.dp
+
 @Composable
 fun NextLessonCard(
     api: MietApi,
     prefs: GroupPrefs,
     /** Открыть расписание: роль и значение из избранного. */
     onOpen: (Role, String) -> Unit,
-    /**
-     * Открыть экран избранного целиком.
-     *
-     * Подпись «Избранное» в шапке блока сделана кнопкой по требованию
-     * владельца от 0.62, поэтому отдельной кнопки «Избранное» в нижнем
-     * подменю главной нет. `null` — на экранах, где список избранного не
-     * нужен, и подпись остаётся простой строкой.
-     */
-    onOpenFavorites: (() -> Unit)? = null,
 ) {
     // Избранное читается из хранилища, а Compose об этом не знает: значение
     // живёт в state, иначе добавление звезды не отражалось бы здесь до
@@ -84,9 +78,50 @@ fun NextLessonCard(
         groups = loaded
     }
 
-    // Пока кэш читается, карточка уже с парой не нужна: пустая плашка над
-    // кнопками мигает и прыгает. Ждём данные.
-    if (groups.isEmpty()) return
+    // ЗАГЛУШКА НА ВРЕМЯ ЧТЕНИЯ КЭША.
+    //
+    // Раньше блок в это время не рисовал ничего, и главная стояла пустой
+    // сверху: список избранного и кнопка «Добавить» подпрыгивали вниз, когда
+    // данные приходили. Замер на эмуляторе: блок наполнялся в разы позже,
+    // чем рисовалась вся остальная главная.
+    //
+    // Высота заглушки фиксированная, поэтому прыжок ограничен одним
+    // переходом «заглушка → содержимое». Точно зарезервировать высоту
+    // нельзя: она зависит от числа избранных, и угадать её заранее нечем.
+    if (groups.isEmpty()) {
+        Card(
+            Modifier.fillMaxWidth().padding(vertical = 6.dp).height(BLOCK_PLACEHOLDER_HEIGHT),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(2.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = null,
+                    tint = LocalAppColors.current.favStar,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Избранное",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = LocalAppColors.current.favStar,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "загружаю…",
+                    fontSize = 12.sp,
+                    color = LocalAppColors.current.muted,
+                )
+            }
+        }
+        return
+    }
 
     // Тик раз в минуту: «через 12 минут» устаревает быстро, а перерисовывать
     // список пар из-за секунд незачем.
@@ -127,31 +162,15 @@ fun NextLessonCard(
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                if (onOpenFavorites != null) {
-                    // Подпись блока — кнопка открытия списка избранного.
-                    // Раньше она читалась «Избранное: что сейчас», но списка
-                    // избранного из неё не открывалось, и вторая кнопка
-                    // «Избранное» в подменю была единственным входом.
-                    // Теперь вход один, и он здесь — на словах, которые уже
-                    // стоят в этом блоке.
-                    Text(
-                        "Избранное",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = LocalAppColors.current.favStar,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onOpenFavorites() }
-                            .padding(vertical = 4.dp, horizontal = 6.dp),
-                    )
-                } else {
-                    Text(
-                        "Избранное",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = LocalAppColors.current.favStar,
-                    )
-                }
+                // Подпись блока — просто строка. С 0.65 список избранного
+                // стоит на главной отдельными кнопками, и второго входа в
+                // него здесь быть не должно.
+                Text(
+                    "Избранное",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = LocalAppColors.current.favStar,
+                )
             }
             // Группы по избранному: заголовок отмечает, кому принадлежит пара.
             // Иначе при двух избранных строки выглядели бы как одна лента, и
@@ -337,11 +356,17 @@ internal suspend fun favLessonData(
     limit: Int = 20,
 ): List<FavLessons> {
     val out = ArrayList<FavLessons>()
+    // Таблица времени читается ОДИН раз на весь блок, а не на каждое
+    // избранное. pairTimesFromCache разбирает JSON до двенадцати расписаний
+    // групп, и вызов внутри цикла при трёх избранных давал до 36 разборов
+    // ради одной таблицы. Хуже того, результат выбрасывался: в mergeTimes
+    // уходил null, и время бралось только из самих пар — то есть таблица
+    // выходила неполной для пар, которых у группы в её расписании нет.
+    val table = runCatching { api.pairTimesFromCache() }.getOrDefault(emptyList())
     for (fav in favs.take(limit)) {
         val raw = runCatching { api.cachedLessonsOf(fav.role, fav.value) }.getOrNull() ?: continue
         if (raw.isEmpty()) continue
-        val times = api.pairTimesFromCache()
-        out += FavLessons(entry = fav, lessons = raw, times = mergeTimes(null, raw))
+        out += FavLessons(entry = fav, lessons = raw, times = mergeTimes(table, raw))
     }
     return out
 }

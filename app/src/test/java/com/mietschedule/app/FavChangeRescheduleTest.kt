@@ -25,7 +25,7 @@ class FavChangeRescheduleTest {
 
     /** Имена всех файлов экранов. */
     private val screens = listOf(
-        "ScheduleUi.kt", "GroupPickerUi.kt", "FavoritesScreen.kt", "PickersScreen.kt"
+        "ScheduleUi.kt", "GroupPickerUi.kt", "HomeScreen.kt", "PickersScreen.kt"
     )
 
     /**
@@ -104,37 +104,6 @@ class FavChangeRescheduleTest {
                 !after.contains("ReminderScheduler.reschedule"),
             )
         }
-    }
-
-    @Test
-    fun `экран избранного умеет просить пересчёт у вызывающего`() {
-        val code = src("FavoritesScreen.kt").withoutComments()
-        assertTrue(
-            "У FavoritesScreen обязан быть колбэк смены избранного",
-            code.contains("onFavChanged: () -> Unit"),
-        )
-        assertTrue(
-            "Обработчик снятия звезды обязан вызывать onFavChanged",
-            Regex("""toggleFavFor\([^)]*\)\s*(\n\s*[^;]*?)?onFavChanged\(\)""").containsMatchIn(code),
-        )
-    }
-
-    @Test
-    fun `вызывающий подключает пересчёт к экрану избранного`() {
-        val code = src("MainActivity.kt").withoutComments()
-        // В вызове FavoritesScreen обязан быть onFavChanged с пересчётом внутри.
-        val call = code.substringAfter("Screen.FAVORITES -> FavoritesScreen(")
-        val body = call.substringBefore("\n        )")
-        assertTrue(
-            "Вызов FavoritesScreen обязан передавать onFavChanged",
-            body.contains("onFavChanged"),
-        )
-        val idx = body.indexOf("onFavChanged")
-        val tail = body.substring(idx)
-        assertTrue(
-            "В onFavChanged обязан быть пересчёт напоминаний",
-            tail.contains("ReminderScheduler.reschedule"),
-        )
     }
 
     @Test

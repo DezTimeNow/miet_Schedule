@@ -40,19 +40,18 @@ class HomeLayoutTest {
      * уходило за нижний край.
      */
     @Test
-    fun `на главной нет карточек ролей но есть карточки действий`() {
+    fun `на главной нет карточек ролей но есть карточка добавления`() {
         val home = code("HomeScreen.kt")
         // Функции карточек определены в этом же файле. Проверять надо
         // ВЫЗОВЫ: на главной карточек ролей быть не должно, а объявление
         // функции само по себе ничего не рисует.
-        val homeScreen = home.substringBefore("fun RoleSelectScreen(")
         assertFalse(
-            "Карточки ролей должны быть только на экране выбора роли",
-            homeScreen.contains("RoleSelectCard("),
+            "Карточки ролей должны быть только на экране добавления",
+            home.substringBefore("fun AddPickerScreen(").contains("AddPickerCard("),
         )
         assertTrue(
-            "Главная должна вести в экран выбора роли карточкой",
-            homeScreen.contains("onClick = onPickRole"),
+            "Главная должна вести на экран добавления карточкой",
+            home.contains("onClick = onAdd"),
         )
     }
 
@@ -64,26 +63,32 @@ class HomeLayoutTest {
      * же две красивые кнопки "выбрать роль" и "избранное"». В 0.63 обе
      * строки были простым текстом, и оформление на главной пропало.
      */
+    /**
+     * Список избранного кнопками и единственная кнопка добавления.
+     *
+     * Требование владельца от 0.65: «кнопку избранное и меню избранное убираем
+     * с главной, вместо неё делаем на главной список Избранное и дальше кнопки
+     * для быстрого доступа на расписание». Добавление вызывается кнопкой
+     * «Добавить» — решение владельца по варианту «а».
+     */
     @Test
-    fun `на главной две карточки выбор роли и избранное`() {
+    fun `на главной список избранного и кнопка добавления`() {
         val home = code("HomeScreen.kt")
-        val homeScreen = home.substringBefore("fun RoleSelectScreen(")
+        val body = home.substringBefore("fun AddPickerScreen(")
+        assertTrue("Нет заголовка списка избранного", body.contains("FAV_LIST_TITLE"))
+        assertTrue("Нет кнопки на каждое избранное", body.contains("FavEntryCard(entry)"))
         assertTrue(
-            "Нет карточки «Выбрать роль»",
-            Regex("""HomeActionCard\([\s\S]{0,200}?"Выбрать роль"""").containsMatchIn(homeScreen),
-        )
-        assertTrue(
-            "Нет карточки «Избранное»",
-            Regex("""HomeActionCard\([\s\S]{0,200}?"Избранное"""").containsMatchIn(homeScreen),
+            "Нет кнопки «Добавить»",
+            Regex("""HomeActionCard\([\s\S]{0,200}?"Добавить"""").containsMatchIn(body),
         )
         // Вид: иконка, название и стрелка — как у прежних карточек ролей.
         assertTrue(
             "Карточка должна рисовать иконку",
-            homeScreen.contains("Icon(icon, contentDescription = null, tint = MIET_BLUE"),
+            body.contains("Icon(icon, contentDescription = null, tint = MIET_BLUE"),
         )
         assertTrue(
             "Карточка должна рисовать стрелку",
-            homeScreen.contains("""\u203a"""),
+            body.contains("""\u203a"""),
         )
     }
 
@@ -104,19 +109,26 @@ class HomeLayoutTest {
         assertFalse(
             "Приглушённый цвет для пояснения не используется",
             Regex("""HomeActionCard[\s\S]{0,600}?LocalAppColors\.current\.muted""")
-                .containsMatchIn(home.substringBefore("fun RoleSelectScreen(")),
+                .containsMatchIn(home.substringBefore("fun AddPickerScreen(")),
         )
     }
 
     @Test
-    fun `экран выбора роли существует и содержит все три роли`() {
+    fun `экран добавления содержит все три роли и не отмечает выбор`() {
         val home = src("HomeScreen.kt")
-        assertTrue("Нужен отдельный экран выбора роли", home.contains("fun RoleSelectScreen("))
+        assertTrue("Нужен отдельный экран добавления", home.contains("fun AddPickerScreen("))
         // Роли перечисляются через enum, а не тремя вызовами подряд: иначе
         // при добавлении четвёртой роли её забыли бы внести.
         assertTrue(
             "Список ролей должен перечисляться через Role.entries",
             Regex("""Role\.entries\.forEach""").containsMatchIn(home),
+        )
+        // Требование владельца от 0.65: отметки выбранной роли на этом экране
+        // нет — это меню выбора, а не показ состояния.
+        val picker = home.substringAfter("fun AddPickerScreen(")
+        assertFalse(
+            "На экране добавления осталась отметка выбранной роли",
+            picker.contains("selected"),
         )
     }
 
@@ -173,18 +185,23 @@ class HomeLayoutTest {
      * Избранное → выбор роли → подменю. Порядок задан требованием.
      */
     @Test
-    fun `порядок на главной избранное затем роль затем подменю`() {
+    fun `порядок на главной блок список добавление подменю`() {
         val home = code("HomeScreen.kt")
-        val favIdx = home.indexOf("NextLessonCard(")
-        val roleIdx = home.indexOf("onClick = onPickRole")
-        val menuIdx = home.indexOf("horizontalArrangement = Arrangement.Center")
-        assertTrue("Не найден блок избранного", favIdx > 0)
-        assertTrue("Не найдена кнопка выбора роли", roleIdx > 0)
+        // Индексы считаем от начала самой функции: константы объявлены выше и
+        // иначе нашли бы объявление, а не место отрисовки.
+        val body = home.substringAfter("fun HomeScreen(")
+        val blockIdx = body.indexOf("NextLessonCard(")
+        val listIdx = body.indexOf("FAV_LIST_TITLE")
+        val addIdx = body.indexOf("onClick = onAdd")
+        val menuIdx = body.indexOf("horizontalArrangement = Arrangement.Center")
+        assertTrue("Не найден блок «сейчас и дальше»", blockIdx > 0)
+        assertTrue("Не найден список избранного", listIdx > 0)
+        assertTrue("Не найдена кнопка добавления", addIdx > 0)
         assertTrue("Не найдено служебное подменю", menuIdx > 0)
         assertTrue(
-            "Порядок должен быть: избранное, выбор роли, подменю. " +
-                "На деле: избранное=$favIdx, роль=$roleIdx, подменю=$menuIdx",
-            favIdx < roleIdx && roleIdx < menuIdx,
+            "Порядок должен быть: блок, список, добавление, подменю. " +
+                "На деле: блок=$blockIdx, список=$listIdx, добавление=$addIdx, подменю=$menuIdx",
+            blockIdx < listIdx && listIdx < addIdx && addIdx < menuIdx,
         )
     }
 

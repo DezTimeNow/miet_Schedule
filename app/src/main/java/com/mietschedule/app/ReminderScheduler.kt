@@ -530,6 +530,14 @@ class ReminderReceiver : BroadcastReceiver() {
         val open = Intent(ctx, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_GROUP, group)
+            // Роль обязательна: расписание выбирает данные ПО РОЛИ, а не по
+            // названию в уведомлении. Без неё тап по напоминанию о группе при
+            // сохранённой роли «преподаватель» открывал расписание
+            // преподавателя. Напоминания сейчас строятся только по группам
+            // избранного (см. rescheduleBlocking), поэтому роль всегда
+            // студенческая; когда появятся напоминания преподавателей и
+            // аудиторий, здесь обязана стоять их роль.
+            putExtra(EXTRA_GROUP_ROLE, Role.STUDENT.key)
         }
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

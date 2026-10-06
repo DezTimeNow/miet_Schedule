@@ -3,6 +3,7 @@ package com.mietschedule.app
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Проверки навигации и состояния.
@@ -19,20 +20,34 @@ class NavigationAndStateTest {
     // ── Стартовый экран ─────────────────────────────────────────────────
 
     @Test
-    fun `без сохранённого выбора открывается главная`() {
-        // С 0.62 главная и выбор роли — разные экраны. Открывать список ролей
-        // на старте значило бы показывать пустой экран вместо избранного.
-        assertEquals(Screen.HOME, startScreenFor(false, false))
+    fun `обычный запуск всегда открывает главную`() {
+        // Требование владельца от 0.65: приложение обязано открываться на
+        // главной странице всегда, в том числе при сохранённой группе — там
+        // список избранного, ради которого его и открывают.
+        assertEquals(Screen.HOME, startScreenFor(fromNotification = false))
     }
 
     @Test
-    fun `сохранённая группа открывает сразу расписание`() {
-        assertEquals(Screen.SCHEDULE, startScreenFor(true, false))
+    fun `переход по напоминанию открывает расписание`() {
+        // Единственное исключение и оно не про запуск: в уведомлении названа
+        // пара, и тап по нему обязан открыть именно это расписание.
+        assertEquals(Screen.SCHEDULE, startScreenFor(fromNotification = true))
     }
 
     @Test
-    fun `группа переданная извне открывает расписание`() {
-        assertEquals(Screen.SCHEDULE, startScreenFor(false, true))
+    fun `сохранённый выбор на стартовый экран не влияет`() {
+        // Правило не должно снова начать смотреть на prefs.load(): именно это
+        // скрывало главную при каждом запуске. Параметра сохранённого выбора
+        // в функции больше нет, поэтому проверяем сам вызов.
+        val main = File("src/main/java/com/mietschedule/app/MainActivity.kt").readText()
+        assertTrue(
+            "Стартовый экран снова зависит от сохранённого выбора",
+            main.contains("startScreenFor(requestedGroup != null)"),
+        )
+        assertTrue(
+            "В startScreenFor вернулся параметр сохранённого выбора",
+            !main.contains("startScreenFor(prefs.load()"),
+        )
     }
 
     // ── Системная кнопка «Назад» ────────────────────────────────────────
@@ -50,32 +65,6 @@ class NavigationAndStateTest {
     @Test
     fun `с расписания без выбора назад ведёт на главную`() {
         assertEquals(Screen.HOME, backTargetFor(Screen.SCHEDULE, hasSelection = false))
-    }
-
-    @Test
-    fun `из избранного назад ведёт в главное меню`() {
-            // Исправление жалобы владельца: из избранного назад вёл на расписание
-            // при сохранённой группе, то есть ПО НАПРАВЛЕНИЮ стрелки уводил
-            // вперёд — на тот экран, из которого в избранное и пришли.
-            // Откуда открыли избранное, там и стоит кнопка «Избранное».
-            assertEquals(Screen.HOME, backTargetFor(Screen.FAVORITES, hasSelection = true))
-    }
-
-    @Test
-    fun `из избранного без выбора назад ведёт на главную`() {
-        // Регрессия: отсюда шли в SCHEDULE при пушем выборе и падали.
-        assertEquals(Screen.HOME, backTargetFor(Screen.FAVORITES, hasSelection = false))
-    }
-
-    @Test
-    fun `из избранного открытое расписание возвращает назад в избранное`() {
-            // Полный круг: меню → избранное → расписание → назад → избранное.
-            // Без этого расписание помнило только, что группа выбрана, и назад
-            // уводил в список групп, откуда человек в избранное не заходил.
-            assertEquals(
-            Screen.FAVORITES,
-            backTargetFor(Screen.SCHEDULE, hasSelection = true, origin = Screen.FAVORITES),
-        )
     }
 
     @Test
@@ -138,9 +127,9 @@ class NavigationAndStateTest {
         // Правило единое, а не частное для расписания: любой экран, у которого
         // есть входы из нескольких мест, возвращает туда, откуда вошли.
         for (screen in listOf(
-            Screen.ABOUT, Screen.SETTINGS, Screen.FAVORITES, Screen.CHIP_GAME, Screen.REPORT,
+            Screen.ABOUT, Screen.SETTINGS, Screen.CHIP_GAME, Screen.REPORT,
         )) {
-            for (origin in listOf(Screen.HOME, Screen.PICK_ROLE, Screen.PICK_ENTITY, Screen.FAVORITES)) {
+            for (origin in listOf(Screen.HOME, Screen.PICK_ROLE, Screen.PICK_ENTITY)) {
                 if (origin == screen) continue
                 assertEquals(
                     "экран $screen из $origin вернул не туда",
@@ -163,7 +152,6 @@ class NavigationAndStateTest {
         // сделало главную единственным возвратом.
         assertEquals(Screen.HOME, backTargetFor(Screen.ABOUT, hasSelection = false))
         assertEquals(Screen.HOME, backTargetFor(Screen.ABOUT, hasSelection = true))
-        assertEquals(Screen.HOME, backTargetFor(Screen.FAVORITES, hasSelection = true))
         assertEquals(Screen.HOME, backTargetFor(Screen.SETTINGS, hasSelection = true))
         assertEquals(Screen.HOME, backTargetFor(Screen.CHIP_GAME, hasSelection = true))
     }

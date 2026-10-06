@@ -30,6 +30,17 @@ internal val MIET_BLUE = Color(0xFF0057B8)
 /** Ключ Intent: какую группу открыть из уведомления. */
 internal const val EXTRA_GROUP = "extra_group"
 
+/**
+ * Ключ Intent: роль, к которой относится значение из уведомления.
+ *
+ * ВНИМАНИЕ: в файле ReminderScheduler.kt есть ВТОРОЙ ключ с тем же именем —
+ * `ReminderScheduler.EXTRA_GROUP` со значением «group». Это разные ключи для
+ * разных переходов: тот служит будильнику (система → приёмник), этот —
+ * переходу из уведомления в Activity. Значения разные намеренно, и путать их
+ * нельзя: с одним значением на оба перехода ломается один из них.
+ */
+internal const val EXTRA_GROUP_ROLE = "extra_group_role"
+
 internal val DAY_NAMES = listOf(
     "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"
 )
@@ -49,14 +60,22 @@ internal val DAY_SHORT = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", 
 /**
  * Экран, который открывается при запуске.
  *
+ * Требование владельца от 0.65: «при закрытии приложения оно должно
+ * открываться на главной странице всегда». Сохранённый выбор на стартовый
+ * экран больше не влияет: раньше он открывал расписание сразу, и главная —
+ * точка входа и место, где живёт список избранного, — при повторном запуске
+ * не показывалась вообще.
+ *
+ * Исключение одно и оно не про запуск: переход по напоминанию. В уведомлении
+ * названа группа и пара, и тап по нему обязан открыть это расписание, иначе
+ * напоминание перестаёт выполнять свою работу. Это адресный переход, а не
+ * «закрыл и открыл», поэтому общему правилу он не подчиняется.
+ *
  * Вынесено отдельной функцией, а не оставлено внутри remember: правило
- * «сохранённая группа → сразу расписание» однажды стояло наоборот
- * (PICK_ENTITY), из-за чего приложение при каждом старте показывало
- * список групп вместо расписания. Правило проверяется тестом напрямую,
- * без запуска Activity.
+ * проверяется тестом напрямую, без запуска Activity.
  */
-internal fun startScreenFor(hasSavedSelection: Boolean, requestedGroup: Boolean): Screen =
-    if (hasSavedSelection || requestedGroup) Screen.SCHEDULE else Screen.HOME
+internal fun startScreenFor(fromNotification: Boolean): Screen =
+    if (fromNotification) Screen.SCHEDULE else Screen.HOME
 
 /**
  * Куда ведёт системная кнопка «Назад» и стрелка «‹».
@@ -106,7 +125,6 @@ internal fun backTargetFor(
         // в список ролей, то есть ровно то жалобу, что была исправлена в 0.60.
         Screen.PICK_ENTITY -> Screen.HOME
         Screen.PICK_ROLE -> Screen.HOME
-        Screen.FAVORITES -> Screen.HOME
         Screen.SETTINGS -> Screen.HOME
         Screen.ABOUT -> Screen.HOME
         Screen.REPORT -> Screen.ABOUT
@@ -163,6 +181,11 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) {
                     AppRoot(
                         requestedGroup = intent?.getStringExtra(EXTRA_GROUP),
+                        // Роль из напоминания. Неизвестная строка даёт null, а
+                        // не «студент» по умолчанию: иначе опечатка в ключе
+                        // молча открывала бы расписание чужой роли.
+                        requestedRole = intent?.getStringExtra(EXTRA_GROUP_ROLE)
+                            ?.let { k -> Role.entries.firstOrNull { it.key == k } },
                         onUpdateFound = updateDialogHandle::show,
                         onThemeChange = { mode ->
                             saveThemeMode(this@MainActivity, mode)
@@ -237,12 +260,23 @@ internal enum class Screen {
      * Смешав их в один экран, пришлось бы гадать, куда ведёт «Назад» с главной.
      */
     HOME,
-    PICK_ROLE, PICK_ENTITY, SCHEDULE, FAVORITES, SETTINGS, ABOUT, REPORT, CHIP_GAME,
+    PICK_ROLE, PICK_ENTITY, SCHEDULE, SETTINGS, ABOUT, REPORT, CHIP_GAME,
 }
 
 @Composable
 fun AppRoot(
+    /** Значение из напоминания: что открыть сразу после запуска. */
     requestedGroup: String? = null,
+    /**
+     * Роль из напоминания.
+     *
+     * Без неё адресный переход открывал расписание ЧУЖОЙ роли: уведомление
+     * несло только название группы, роль бралась из сохранённой, и при
+     * сохранённой роли «преподаватель» тап по напоминанию о группе показывал
+     * расписание преподавателя — данные выбираются по роли, а не по имени в
+     * уведомлении.
+     */
+    requestedRole: Role? = null,
     onUpdateFound: (UpdateInfo) -> Unit = {},
     onThemeChange: (Int) -> Unit = {},
 ) {
@@ -255,7 +289,7 @@ fun AppRoot(
     // и открытый экран возвращались к значениям из prefs. Роль и экран — enum,
     // а rememberSaveable умеет сохранять только типы, поддерживаемые Bundle,
     // поэтому для них заданы Saver (выше): наружу отдаётся строка.
-    var role by rememberSaveable(stateSaver = RoleSaver) { mutableStateOf(prefs.role()) }
+    var role by rememberSaveable(stateSaver = RoleSaver) { mutableStateOf(requestedRole ?: prefs.role()) }
     // Выбор в рамках роли. Для преподавателя храним ФИО, для аудитории — имя
     // (по имени проще искать в избранном), код аудитории добираем из списка.
     // Код преподавателя и имя аудитории тоже переживают поворот. Раньше это
@@ -274,7 +308,7 @@ fun AppRoot(
     // даже при готовом кэше (sched_ИВТ-11 в miet_cache.xml). Без сохранённого
     // выбора — как и раньше, с экрана выбора роли.
     var screen by rememberSaveable(stateSaver = ScreenSaver) {
-        mutableStateOf(startScreenFor(prefs.load() != null, requestedGroup != null))
+        mutableStateOf(startScreenFor(requestedGroup != null))
     }
     // Откуда открыли расписание — экран, в который ведёт «Назад».
     //
@@ -578,27 +612,25 @@ fun AppRoot(
 
 
     when (screen) {
-        // ГЛАВНАЯ. Блок избранного, кнопка выбора роли, служебное подменю.
+        // ГЛАВНАЯ. Блок «сейчас и дальше», список избранного кнопками,
+        // кнопка добавления и служебное подменю.
         Screen.HOME -> HomeScreen(
             api = api,
             prefs = prefs,
             onOpenFavorite = { r, value -> openFromMenu(r, value) },
             onRefresh = { refreshCurrent() },
-            onPickRole = { goTo(Screen.PICK_ROLE) },
+            onAdd = { goTo(Screen.PICK_ROLE) },
             refreshNote = refreshNote,
             onAbout = { goTo(Screen.ABOUT) },
             onSettings = { goTo(Screen.SETTINGS) },
             onOpenChipGame = { goTo(Screen.CHIP_GAME) },
-            onOpenFavorites = { goTo(Screen.FAVORITES) },
             refreshing = refreshing,
         )
 
-        // ВЫБОР РОЛИ — отдельный экран, а не содержимое главной. Три карточки
-        // занимали почти весь первый экран и вытесняли избранное, ради
-        // которого приложение и открывают. Здесь они стоят без оглядки на
-        // блок избранного: выбрал роль — выбираешь сущность.
-        Screen.PICK_ROLE -> RoleSelectScreen(
-            current = if (prefs.load() != null) role else null,
+        // ДОБАВЛЕНИЕ. Выбор группы, преподавателя и аудитории вызывается
+        // кнопкой «Добавить» с главной. Отметки текущей роли здесь нет и
+        // подсветки нет: это меню выбора, а не показ состояния.
+        Screen.PICK_ROLE -> AddPickerScreen(
             onRefresh = { refreshCurrent() },
             onBack = { screen = backTargetFor(Screen.PICK_ROLE, selection != null, screenOrigin) },
             onHome = { goTo(Screen.HOME) },
@@ -734,66 +766,6 @@ fun AppRoot(
         // Отдельный экран без параметров: он не зависит от выбранной роли
         // или группы, а результат уходит на скрипт таблицы лидеров.
         Screen.CHIP_GAME -> TapChipScreen(onBack = { screen = backTargetFor(Screen.CHIP_GAME, selection != null, screenOrigin) })
-
-Screen.FAVORITES -> FavoritesScreen(
-            prefs = prefs,
-            onOpen = { r, value ->
-                // Открытие из избранного. Здесь восстанавливается всё, что нужно
-                // расписанию, а не только имя: у преподавателя ключ поиска — это
-                // нормализованное ФИО, у аудитории нужен ещё и внутренний код.
-                // Раньше здесь стояли `teacherCode = ""` и переход в PICK_ENTITY,
-                // из-за чего преподаватель показывал «Пар не найдено», аудитория —
-                // «Не удалось определить аудиторию», а студент после выбора
-                // попадал в список групп и должен был жать на группу ещё раз.
-                prefs.saveRole(r)
-                role = r
-                when (r) {
-                    Role.STUDENT -> {
-                        selection = value
-                        teacherCode = ""
-                        roomNameArg = ""
-                    }
-                    Role.TEACHER -> {
-                        // teacherCode здесь — не числовой код, а нормализованное
-                        // ФИО: именно с ним TeacherIndex.lessonsOf сравнивает
-                        // преподавателя в кэше расписаний.
-                        selection = value
-                        teacherCode = TeacherIndex.key(value)
-                        roomNameArg = ""
-                    }
-                    Role.AUDIENCE -> {
-                        // Имя нужно само по себе для фильтра кэша по комнате,
-                        // код — для запроса к серверу. В избранном хранится имя,
-                        // код ищем в кэше списка аудиторий.
-                        selection = value
-                        roomNameArg = value
-                        teacherCode = api.audienceCodeByName(value)?.toString().orEmpty()
-                    }
-                }
-                prefs.saveFor(r, selection ?: "")
-                // Помечаем происхождение: с этого момента «Назад» на экране
-                // расписания возвращает в «Избранное», а не в список групп.
-                goTo(Screen.SCHEDULE)
-            },
-            // Назад из избранного идёт через общий backTargetFor, а не
-            // отдельной строкой: раньше здесь стояло
-            // `backTargetFor(Screen.FAVORITES, selection != null)`, и при
-            // сохранённой группе это давало SCHEDULE — то есть назад уводил
-            // на расписание, вперёд оттуда, откуда в избранное пришли.
-            // Теперь сам backTargetFor для FAVORITES отдаёт PICK_ROLE, и
-            // отдельная ветка была бы второй копией того же правила.
-            onBack = { screen = backTargetFor(Screen.FAVORITES, selection != null, screenOrigin) },
-            onRefresh = { refreshCurrent() },
-            onChangeRole = { goTo(Screen.HOME) },
-            refreshing = refreshing,
-            refreshNote = refreshNote,
-            // Снятие звезды прямо здесь не пересчитывало будильники: экран
-            // избранного менял список, а напоминания оставались до фоновой
-            // задачи. Отданная группа продолжала присылать пуши.
-            onFavChanged = {
-                runCatching { ReminderScheduler.reschedule(context, api) }
-            },
-        )
 
         // Расписание без выбранной сущности показывать нечем: экран взял бы
         // пустую группу. Раньше здесь стояло selection!!, и любой путь,
