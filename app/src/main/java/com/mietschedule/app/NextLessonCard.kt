@@ -1,6 +1,7 @@
 package com.mietschedule.app
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -233,6 +234,22 @@ private fun FavLessonLine(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
+            // ИДУЩАЯ ПАРА ЗАЛИТА ЦВЕТОМ ТЕКУЩЕЙ.
+            //
+            // Тот же цвет, что у карточки идущей пары на экране расписания
+            // (NextLessonRow): одно значение в двух местах означает одно и то
+            // же — «идёт сейчас». Пользователь учится этому один раз.
+            //
+            // Цвет берётся из темы: в тёмной теме это тёмно-синий, потому что
+            // светлая заливка на чёрном фоне слепит.
+            //
+            // Заливка ставится ДО padding: фон рисуется по всей строке, а не
+            // только под текстом, иначе подсветка выглядела бы обрезанной по
+            // краям. На измерение это не влияет — background только рисует,
+            // поэтому строки не сдвигаются при появлении отметки.
+            .then(
+                if (going) Modifier.background(LocalAppColors.current.currentGroup) else Modifier
+            )
             .clickable(onClick = onClick)
             .padding(vertical = 6.dp, horizontal = 4.dp),
     ) {
