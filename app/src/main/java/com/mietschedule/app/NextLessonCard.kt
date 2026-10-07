@@ -385,14 +385,22 @@ internal suspend fun favLessonData(
     // Таблица времени читается ОДИН раз на весь блок, а не на каждое
     // избранное. pairTimesFromCache разбирает JSON до двенадцати расписаний
     // групп, и вызов внутри цикла при трёх избранных давал до 36 разборов
-    // ради одной таблицы. Хуже того, результат выбрасывался: в mergeTimes
-    // уходил null, и время бралось только из самих пар — то есть таблица
-    // выходила неполной для пар, которых у группы в её расписании нет.
-    val table = runCatching { api.pairTimesFromCache() }.getOrDefault(emptyList())
+    // ради одной таблицы.
+    //
+    // ЭТА ТАБЛИЦА — ТОЛЬКО ЗАПАСНОЙ ПУТЬ. Она собрана от ПЕРВОЙ попавшейся
+    // группы из кэша, а сетка звонков у групп разная (3-я пара: 12:00 у одних,
+    // 12:30 у колледжных). Отдавать её в строки нельзя: пара, у которой есть
+    // своё время, обязана показывать его. Поэтому у каждого избранного
+    // сначала идёт СВОЯ таблица, а общая добирает лишь те коды, которых у
+    // него нет вовсе.
+    val fallback = runCatching { api.pairTimesFromCache() }.getOrDefault(emptyList())
     for (fav in favs.take(limit)) {
         val raw = runCatching { api.cachedLessonsOf(fav.role, fav.value) }.getOrNull() ?: continue
         if (raw.isEmpty()) continue
-        out += FavLessons(entry = fav, lessons = raw, times = mergeTimes(table, raw))
+        val own = collectTimes(raw)
+        val times = if (own.isEmpty()) fallback
+        else own + fallback.filter { f -> own.none { it.code == f.code } }
+        out += FavLessons(entry = fav, lessons = raw, times = times)
     }
     return out
 }

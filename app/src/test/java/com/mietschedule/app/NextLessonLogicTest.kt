@@ -364,4 +364,82 @@ class NextLessonLogicTest {
         val lessons = listOf(lesson(1, 1, "Физика"), lesson(1, 2, "Математика"))
         assertEquals("Математика", NextLessonLogic.next(lessons, times, now, withinDays = 0)?.lesson?.classInfo?.name)
     }
+
+    // ─────────── сетка звонков: у каждой группы своя ───────────
+
+    /** Пара, которая знает своё время (как их отдаёт miet.ru). */
+    private fun lessonWithOwnTime(
+        day: Int,
+        pair: Int,
+        from: String,
+        to: String,
+        name: String = "Предмет",
+    ) = Lesson(
+        day = day,
+        dayNumber = 0,
+        time = PairCode(time = "$pair пара", code = pair, timeFrom = from, timeTo = to),
+        classInfo = ClassInfo(
+            code = "c$pair", name = name,
+            teacherFull = "Иванов И.И.", teacher = "Иванов И.И.", form = false,
+        ),
+        group = GroupInfo(code = "g", name = "ИВТ-11"),
+    )
+
+    private fun hm(millis: Long?): String {
+        if (millis == null) return "нет"
+        val c = Calendar.getInstance().apply { timeInMillis = millis }
+        return String.format(java.util.Locale.US, "%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
+    }
+
+    /**
+     * Пара показывает СВОЁ время, а не время чужой группы.
+     *
+     * Найдено на устройстве: на главной в «Ближайших парах» у трёх пар стояло
+     * 12:00, тогда как в расписании те же пары стоят в 12:30. Причина — блок
+     * брал общую таблицу времени из кэша, собранную от первой попавшейся
+     * группы, и таблица побеждала время самой пары.
+     *
+     * Числа настоящие, сняты с miet.ru: у ЮР-26-11О третья пара 12:30–13:50,
+     * у ПСИ-11М — 12:00–13:20. Сетка звонков у групп разная.
+     */
+    @Test
+    fun `пара показывает своё время а не время чужой группы`() {
+        // Чужая таблица (сетка 12:00) подсунута паре из группы с сеткой 12:30.
+        val foreign = listOf(time(3, "0001-01-01T12:00:00", "0001-01-01T13:20:00"))
+        val college = lessonWithOwnTime(
+            1, 3, "0001-01-01T12:30:00", "0001-01-01T13:50:00", "Обществознание"
+        )
+        val (_, upcoming) = NextLessonLogic.currentAndNext(
+            listOf(college), foreign, mondayAt(12, 10), withinDays = 0
+        )
+        assertNotNull("пара в 12:30 должна быть следующей, а не выпасть", upcoming)
+        assertEquals("время начала пары — из самой пары", "12:30", hm(upcoming!!.start))
+        assertEquals("время конца — тоже из пары", "13:50", hm(upcoming!!.end))
+    }
+
+    /** Две сетки в одном блоке: каждая пара считает по своей. */
+    @Test
+    fun `две сетки звонков не мешают друг другу`() {
+        val foreign = listOf(time(3, "0001-01-01T12:00:00", "0001-01-01T13:20:00"))
+        val late = lessonWithOwnTime(1, 3, "0001-01-01T12:30:00", "0001-01-01T13:50:00", "Поздняя")
+        val early = lessonWithOwnTime(1, 3, "0001-01-01T12:00:00", "0001-01-01T13:20:00", "Ранняя")
+        val day = Calendar.getInstance().apply { timeInMillis = mondayAt(0, 0) }
+        assertEquals("12:30", hm(NextLessonLogic.startMillis(late, foreign, day)))
+        assertEquals("12:00", hm(NextLessonLogic.startMillis(early, foreign, day)))
+    }
+
+    /**
+     * Если у пары своего времени нет, берётся таблица.
+     *
+     * Запасной путь обязателен: у части аудиторий корпуса 8 сервер не отдаёт
+     * часы вовсе, и без таблицы такая пара исчезла бы из блока совсем.
+     */
+    @Test
+    fun `пара без своего времени берёт время из таблицы`() {
+        val table = listOf(time(3, "0001-01-01T12:30:00", "0001-01-01T13:50:00"))
+        val without = lesson(1, 3, "Без времени")
+        val day = Calendar.getInstance().apply { timeInMillis = mondayAt(0, 0) }
+        assertEquals("12:30", hm(NextLessonLogic.startMillis(without, table, day)))
+        assertEquals("13:50", hm(NextLessonLogic.endMillis(without, table, day)))
+    }
 }

@@ -33,18 +33,32 @@ object NextLessonLogic {
         val end: Long?,
     )
 
-    /** Момент начала пары по её номеру в таблице времени. */
+    /**
+     * Момент начала пары.
+     *
+     * ВРЕМЯ САМОЙ ПАРЫ ВАЖНЕЕ ТАБЛИЦЫ. Сетка звонков у групп разная: 3-я пара
+     * у ЮР-26-11О начинается в 12:30, у Э-24-11 — в 12:00 (проверено на живом
+     * ответе miet.ru). Таблица, собранная от другой группы, давала главному
+     * экрану 12:00 для пары, которая в расписании стоит в 12:30: сам экран
+     * расписания берёт время своей группы и показывает верно, а блок
+     * «Ближайшие пары» брал общую таблицу из кэша и врал на полчаса.
+     *
+     * Таблица остаётся запасным путём — она нужна там, где у пары времени
+     * нет вовсе (часть аудиторий корпуса 8).
+     */
     fun startMillis(lesson: Lesson, times: List<PairTime>, dayDate: Calendar): Long? {
         val code = lesson.time?.code ?: return null
-        val from = times.firstOrNull { it.code == code }?.timeFrom ?: return null
-        return atMinutes(dayDate, parseHhMm(from))
+        val own = parseHhMm(lesson.time?.timeFrom)
+        val from = own ?: parseHhMm(times.firstOrNull { it.code == code }?.timeFrom) ?: return null
+        return atMinutes(dayDate, from)
     }
 
     /** Тот же момент, но со временем конца пары. */
     fun endMillis(lesson: Lesson, times: List<PairTime>, dayDate: Calendar): Long? {
         val code = lesson.time?.code ?: return null
-        val to = times.firstOrNull { it.code == code }?.timeTo ?: return null
-        return atMinutes(dayDate, parseHhMm(to))
+        val own = parseHhMm(lesson.time?.timeTo)
+        val to = own ?: parseHhMm(times.firstOrNull { it.code == code }?.timeTo) ?: return null
+        return atMinutes(dayDate, to)
     }
 
     private fun atMinutes(date: Calendar, hm: IntArray?): Long? {
