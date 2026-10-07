@@ -396,17 +396,20 @@ fun AudiencePickerScreen(
 
 // Таблица времени пар нужна фильтру «свободные на данную минуту»:
     // чтобы понять, какая пара идёт прямо сейчас, нужны часы каждой пары.
-    // На экране аудиторий её нет — расписание выбрано не открыто, поэтому
-    // берём из кэша расписаний. Одна сборка на весь экран: собирать её в
-    // каждом чипе нельзя, это разбор кэша на каждое нажатие.
+    // На экране аудиторий её нет — расписание не открыто, поэтому берём из
+    // кэша. НО ГЛАЗАМИ ПОЛЬЗОВАТЕЛЯ: сетка звонков у групп разная (3-я пара
+    // 12:00 у одних, 12:30 у колледжных), и первая попавшаяся таблица давала
+    // на чипах чужое время. pairTimesForUser берёт сетку группы пользователя.
+    // Одна сборка на весь экран: собирать её в каждом чипе нельзя, это разбор
+    // кэша на каждое нажатие.
     //
-    // Состояние, а не suspend прямо в remember: pairTimesFromCache ходит в
-    // кэш и является suspend-функцией, а remember-блок не suspend. Раньше
-    // здесь стоял withContext внутри remember, и файл не компилировался.
+    // Состояние, а не suspend прямо в remember: чтение идёт из кэша и является
+    // suspend-функцией, а remember-блок не suspend. Раньше здесь стоял
+    // withContext внутри remember, и файл не компилировался.
     var pairTimes by remember { mutableStateOf<List<PairTime>>(emptyList()) }
     LaunchedEffect(Unit) {
         val fromCache = withContext(Dispatchers.IO) {
-            runCatching { api.pairTimesFromCache() }.getOrDefault(emptyList())
+            runCatching { api.pairTimesForUser(prefs) }.getOrDefault(emptyList())
         }
         pairTimes = fromCache
     }

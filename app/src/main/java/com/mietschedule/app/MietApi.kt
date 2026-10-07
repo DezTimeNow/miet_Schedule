@@ -621,6 +621,35 @@ internal fun roomLessonKey(l: Lesson): String =
         return fromLessons.orEmpty()
     }
 
+    /**
+     * Сетка звонков глазами пользователя.
+     *
+     * Время пары зависит от группы: 3-я пара у одних начинается в 12:00, у
+     * колледжных — в 12:30 (проверено на живом ответе miet.ru). Поэтому
+     * «первая попавшаяся» таблица для подписей чипов и для расчёта идущей
+     * пары не годится: на экране аудиторий чипы показывали чужое время.
+     *
+     * Источник — расписание ГРУППЫ, потому что сетка задаётся именно группой.
+     * Порядок: своя группа пользователя, затем любая избранная, и только если
+     * групп нет вовсе — прежний путь (таблица из кэша). У преподавателя и
+     * аудитории своей группы может не быть: тогда поведение остаётся прежним.
+     *
+     * Собирать таблицу из пар одного расписания дешевле, чем разбирать
+     * двенадцать чужих, поэтому сначала идёт этот путь.
+     */
+    suspend fun pairTimesForUser(prefs: GroupPrefs): List<PairTime> {
+        val ownGroup = prefs.loadFor(Role.STUDENT)
+        if (!ownGroup.isNullOrBlank()) {
+            val own = collectTimes(cachedLessonsOf(Role.STUDENT, ownGroup))
+            if (own.isNotEmpty()) return own
+        }
+        for (group in prefs.favGroups(Role.STUDENT)) {
+            val own = collectTimes(cachedLessonsOf(Role.STUDENT, group))
+            if (own.isNotEmpty()) return own
+        }
+        return pairTimesFromCache()
+    }
+
     fun loadAudienceIndex(): String? = prefs.getString(KEY_AUD_IDX, null)
     fun loadAudienceIndexTs(): Long = prefs.getLong(KEY_AUD_IDX_TS, 0L)
 

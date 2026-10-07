@@ -115,8 +115,9 @@ object NextLessonLogic {
         times: List<PairTime>,
         now: Long,
         withinDays: Int = 7,
+        semestrStartIso: String = WeekType.SEMESTR_START_ISO,
     ): Hit? {
-        val (going, upcoming) = currentAndNext(lessons, times, now, withinDays)
+        val (going, upcoming) = currentAndNext(lessons, times, now, withinDays, semestrStartIso)
         return going ?: upcoming
     }
 
@@ -130,14 +131,28 @@ object NextLessonLogic {
      *
      * Идущая и следующая не могут совпасть: идущая по [isGoing] уже
      * началась, следующая по определению начинается позже [now].
+     *
+     * Пары фильтруются по строке УЧЕБНОЙ недели (`DayNumber`), причём строка
+     * считается для каждого дня окна отдельно. Без этой проверки вовсе блок
+     * показывал пару чужой недели: у ТЭС-26-11О в среду 4-й парой стоит
+     * «География» (недели 0 и 2) и «Введение в специальность» (недели 1 и 3),
+     * и в знаменатель на главной показывалась география, хотя внутри
+     * расписания — введение в специальность. Экран расписания фильтрует
+     * ровно так же, и расхождение было между экранами.
      */
     fun currentAndNext(
         lessons: List<Lesson>,
         times: List<PairTime>,
         now: Long,
         withinDays: Int = 7,
+        semestrStartIso: String = WeekType.SEMESTR_START_ISO,
     ): Pair<Hit?, Hit?> {
         if (lessons.isEmpty()) return null to null
+
+        // Разметка по неделям есть? Если её нет вовсе (старый кэш, ответ без
+        // DayNumber), фильтровать нечем — ведём себя как раньше.
+        val hasWeekRows = lessons.any { it.dayNumber != null }
+        val semestrStart = WeekType.parseIso(semestrStartIso)
 
         val hits = mutableListOf<Hit>()
 
@@ -153,9 +168,15 @@ object NextLessonLogic {
                 add(Calendar.DAY_OF_MONTH, dayIn)
             }
             val weekDay = dayIndexFromCalendar(date.get(Calendar.DAY_OF_WEEK))
+            // Строка недели — ДЛЯ ЭТОГО ДНЯ, а не одна на весь блок: окно в
+            // семь дней переходит в следующую учебную неделю, и её пары лежат
+            // в другой строке DayNumber. Одна общая строка отсекла бы пары
+            // конца окна.
+            val weekRow = semestrStart?.let { WeekType.typeFor(date, it) }
 
             for (l in lessons) {
                 if ((l.day ?: 1) - 1 != weekDay) continue
+                if (hasWeekRows && weekRow != null && l.dayNumber != weekRow) continue
                 val start = startMillis(l, times, date)
                 // Пара без времени таблицы пропускаем: показывать её нечем.
                 // Номер пары без часов в строке «сейчас» вводит в заблуждение.

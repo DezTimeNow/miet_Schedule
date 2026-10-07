@@ -1,6 +1,7 @@
 package com.mietschedule.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -63,11 +64,44 @@ class PairChipLabelTest {
         // сборка таблицы из пар дала бы неполный ответ.
         val src = srcText("MietApi.kt")
         val fn = src.substringAfter("suspend fun pairTimesFromCache")
-            .substringBefore("\n    fun loadAudienceIndex")
+            .substringBefore("suspend fun pairTimesForUser")
         assertTrue(
             "pairTimesFromCache не читает Times верхнего уровня",
             fn.contains("resp?.times"),
         )
+    }
+
+    /**
+     * Чипы берут сетку ГРУППЫ ПОЛЬЗОВАТЕЛЯ, а не первую попавшуюся.
+     *
+     * Тот же корень, что и у дефекта на главной: сетка звонков у групп разная
+     * (3-я пара 12:00 у одних, 12:30 у колледжных). Экран аудиторий брал
+     * таблицу из кэша «от первой попавшейся группы», и у пользователя
+     * колледжной группы чип показывал 12:00 вместо 12:30.
+     */
+    @Test
+    fun `чипы берут сетку группы пользователя`() {
+        val pickers = srcText("PickersScreen.kt")
+        assertTrue(
+            "экран аудиторий должен брать сетку пользователя",
+            pickers.contains("pairTimesForUser("),
+        )
+        assertFalse(
+            "первая попавшаяся таблица на этом экране больше не используется",
+            pickers.contains("pairTimesFromCache()"),
+        )
+
+        // Порядок внутри функции: своя группа, затем избранные, и только
+        // потом прежний путь из кэша.
+        val api = srcText("MietApi.kt")
+        val fn = api.substringAfter("suspend fun pairTimesForUser")
+            .substringBefore("\n    fun loadAudienceIndex")
+        val own = fn.indexOf("loadFor(Role.STUDENT)")
+        val fav = fn.indexOf("favGroups(Role.STUDENT)")
+        val last = fn.indexOf("pairTimesFromCache()")
+        assertTrue("нет пути «своя группа»", own >= 0)
+        assertTrue("своя группа должна идти раньше избранных", own < fav)
+        assertTrue("прежний путь должен остаться последним", fav < last)
     }
 
     /** Читает исходник из пакета main — тесты ходят в файлы, как и соседние. */

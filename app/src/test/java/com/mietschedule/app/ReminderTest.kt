@@ -189,3 +189,52 @@ class LastUpdatedLabelTest {
         assertTrue(LastUpdated.dataLabel(now - 25 * hour, now).contains("устарели"))
     }
 }
+
+/**
+ * Проверки кодов будильников и номеров уведомлений.
+ *
+ * У группы бывает ДВЕ пары в одном слоте: у ТЭС-26-11О в среду 3-я пара —
+ * «Информатика» в 8307 (Алесин) и «Информатика» в 8306 (Демиданов). Код
+ * будильника считался по группе, дню и номеру пары, поэтому у этих двух пар
+ * он совпадал: второй PendingIntent заменял первый, и напоминание приходило
+ * одно вместо двух. Номер уведомления тоже брался по группе — второе
+ * затирало первое. Пользователь видел это как «приходят не все».
+ */
+class ReminderIdTest {
+
+    /** Читает исходник из пакета main — тесты здесь ходят в файлы. */
+    private fun srcText(name: String): String {
+        val candidates = listOf(
+            "src/main/java/com/mietschedule/app/$name",
+            "../app/src/main/java/com/mietschedule/app/$name",
+        )
+        for (p in candidates) {
+            val f = java.io.File(p)
+            if (f.exists()) return f.readText()
+        }
+        throw AssertionError("не найден исходник $name")
+    }
+
+    @Test
+    fun `код будильника различает две пары одного слота`() {
+        val src = srcText("ReminderScheduler.kt")
+        assertTrue(
+            "код должен учитывать аудиторию, иначе пары одного слота совпадут",
+            src.contains("pairCode: Int,\n        room: String?"),
+        )
+        assertTrue(
+            "при постановке аудитория должна передаваться",
+            src.contains("l.time?.code ?: 0, l.roomNameSafe()"),
+        )
+    }
+
+    @Test
+    fun `номер уведомления отличается у разных пар`() {
+        val src = srcText("ReminderScheduler.kt")
+        assertTrue("код должен класться в Intent", src.contains("putExtra(EXTRA_REMIND_ID, id)"))
+        assertTrue(
+            "получатель должен брать номер из кода будильника",
+            src.contains("getIntExtra(ReminderScheduler.EXTRA_REMIND_ID"),
+        )
+    }
+}

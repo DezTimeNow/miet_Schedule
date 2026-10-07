@@ -46,7 +46,12 @@ class NextLessonLogicTest {
         pair: Int,
         name: String = "Предмет",
         room: String? = null,
-        weekRow: Int = 0,
+        // По умолчанию — ТЕКУЩАЯ учебная неделя. Тесты ниже берут «сейчас» от
+        // настоящей даты (mondayAt), и пары в них должны быть того же дня той
+        // же недели: иначе блок «Ближайшие пары» отбросит их как чужие, и
+        // проверка упадёт не из-за дефекта, а из-за неверных данных.
+        // Где пара относится к другой неделе, её задают явно.
+        weekRow: Int = WeekType.currentRowIndex(),
     ) = Lesson(
         day = day,
         dayNumber = weekRow,
@@ -60,6 +65,94 @@ class NextLessonLogicTest {
             RoomInfo(code = it.filter { c -> c.isDigit() }.toIntOrNull(), name = it)
         },
     )
+
+    /** Фиксированный момент: [y]-[m]-[d] [h]:[mi] по локальному времени. */
+    private fun atDate(y: Int, m: Int, d: Int, h: Int, mi: Int): Long =
+        Calendar.getInstance().apply {
+            clear()
+            set(y, m - 1, d, h, mi)
+        }.timeInMillis
+
+    // ─────────────────── учебная неделя (DayNumber) ───────────────────
+    //
+    // Начало семестра 04.08.2026 (понедельник — 03.08), поэтому неделя
+    // 10.08–16.08.2026 — это строка 1 (1-й знаменатель), а 17.08–23.08 —
+    // строка 2 (2-й числитель).
+
+    /**
+     * Блок «Ближайшие пары» не показывает пару чужой учебной недели.
+     *
+     * Реальный случай: ТЭС-26-11О, среда, 4-я пара. В неделях 0 и 2 —
+     * «География» (ауд. 8109, Ушканов), в неделях 1 и 3 — «Введение в
+     * специальность» (ауд. 1203, Волкова). В знаменатель блок показывал
+     * географию, хотя идёт введение в специальность: пара бралась из строки
+     * чужой недели. Внутри расписания при этом было верно — экран расписания
+     * фильтрует по строке недели, а блок нет.
+     */
+    @Test
+    fun `блок ближайших пар не берёт пару чужой учебной недели`() {
+        val times = listOf(time(4, "14:00", "15:20"))
+        val geo = lesson(day = 3, pair = 4, name = "География", weekRow = 0)
+        val intro = lesson(day = 3, pair = 4, name = "Введение в специальность", weekRow = 1)
+
+        // Среда 12.08.2026, 13:30 — до 4-й пары полтора часа.
+        val now = atDate(2026, 8, 12, 13, 30)
+
+        val (going, upcoming) = NextLessonLogic.currentAndNext(
+            listOf(geo, intro), times, now, 0, "2026-08-04",
+        )
+
+        assertNull("идущей пары быть не должно", going)
+        assertEquals(
+            "показана пара чужой учебной недели",
+            "Введение в специальность",
+            upcoming?.lesson?.classInfo?.name,
+        )
+    }
+
+    /**
+     * Окно в семь дней берёт пару СЛЕДУЮЩЕЙ учебной недели.
+     *
+     * Строка недели обязана считаться на каждый день окна: иначе фильтр по
+     * одной общей строке отсекал бы пары конца недели, а окно смотрит на
+     * семь дней вперёд.
+     */
+    @Test
+    fun `окно в семь дней берёт пару следующей учебной недели`() {
+        val times = listOf(time(1, "09:00", "10:20"))
+        // Понедельник: в текущей неделе (строка 1) «Литература», в следующей
+        // (строка 2) «Русский язык». Смотрим в среду — ближайший понедельник
+        // ещё впереди, и показать надо пару следующей недели.
+        val lit = lesson(day = 1, pair = 1, name = "Литература", weekRow = 1)
+        val rus = lesson(day = 1, pair = 1, name = "Русский язык", weekRow = 2)
+
+        val now = atDate(2026, 8, 12, 13, 30)
+        val upcoming = NextLessonLogic.currentAndNext(
+            listOf(lit, rus), times, now, 7, "2026-08-04",
+        ).second
+
+        assertEquals(
+            "на следующей неделе должна быть своя пара",
+            "Русский язык",
+            upcoming?.lesson?.classInfo?.name,
+        )
+    }
+
+    /** Расписание без разметки по неделям фильтровать нечем — как раньше. */
+    @Test
+    fun `без разметки по неделям пары не отбрасываются`() {
+        val times = listOf(time(4, "14:00", "15:20"))
+        val noWeek = Lesson(
+            day = 3,
+            time = PairCode(time = "4 пара", code = 4, timeFrom = null, timeTo = null),
+            classInfo = ClassInfo(name = "География", teacherFull = "Ушканов А.В."),
+        )
+        val now = atDate(2026, 8, 12, 13, 30)
+        val upcoming = NextLessonLogic.currentAndNext(
+            listOf(noWeek), times, now, 0, "2026-08-04",
+        ).second
+        assertEquals("География", upcoming?.lesson?.classInfo?.name)
+    }
 
     // ─────────────────────── разбор времени ───────────────────────
 
@@ -171,7 +264,11 @@ class NextLessonLogicTest {
         // могла оказаться двумя днями в прошлом.
         val sat = plusDays(mondayAt(12, 0), 5)
         val hit = NextLessonLogic.next(
-            lessons = listOf(lesson(day = 4, pair = 1, name = "Прошлая")),
+            // Четверг наступит уже в СЛЕДУЮЩЕЙ учебной неделе: выходной между
+            // «сейчас» и парой переводит окно на строку вперёд.
+            lessons = listOf(
+                lesson(day = 4, pair = 1, name = "Прошлая", weekRow = WeekType.shiftedRow(1)),
+            ),
             times = listOf(time(1, "08:00", "09:30")),
             now = sat,
         )
@@ -376,7 +473,9 @@ class NextLessonLogicTest {
         name: String = "Предмет",
     ) = Lesson(
         day = day,
-        dayNumber = 0,
+        // Текущая неделя: «сейчас» в тестах строится от настоящей даты
+        // (mondayAt), и пары должны лежать в той же учебной неделе.
+        dayNumber = WeekType.currentRowIndex(),
         time = PairCode(time = "$pair пара", code = pair, timeFrom = from, timeTo = to),
         classInfo = ClassInfo(
             code = "c$pair", name = name,

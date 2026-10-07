@@ -94,10 +94,38 @@ class RescheduleOrderTest {
         )
         // Код включает группу, значит коллизий между группами нет.
         val s = src("ReminderScheduler.kt")
-        val fn = s.substring(s.indexOf("private fun requestCodeFor"))
+        val fn = s.substringAfter("private fun requestCodeFor")
+        // Проверяем всё объявление целиком, а не первую строку: сигнатура
+        // разбита на строки, и проверка одной строки уже падала на этом.
+        val signature = fn.substringBefore("): Int")
         assertTrue(
             "requestCodeFor обязан учитывать группу в коде",
-            fn.substring(0, fn.indexOf("\n")).contains("group"),
+            signature.contains("group"),
+        )
+        assertTrue(
+            "и аудиторию: две пары одного слота иначе получат один код",
+            signature.contains("room"),
+        )
+    }
+
+    /**
+     * Пересчёт напоминаний при запуске приложения.
+     *
+     * Будильники не переживают ОБНОВЛЕНИЕ приложения: Android снимает
+     * PendingIntent'ы при установке новой версии. Пересчёт висел только на
+     * загрузке расписания, а со свежим кэшем загрузки не происходит — и
+     * напоминаний нет до первого обновления данных. Приложение обновляет
+     * себя само, то есть теряло пуши после каждой установки, и выглядело
+     * это как «приходят не все».
+     */
+    @Test
+    fun `напоминания пересчитываются при запуске`() {
+        val on = src("MainActivity.kt")
+            .substringAfter("override fun onCreate")
+            .substringBefore("setContent {")
+        assertTrue(
+            "onCreate обязан пересчитывать напоминания, иначе после обновления пушей нет",
+            on.contains("ReminderScheduler.reschedule("),
         )
     }
 }

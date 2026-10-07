@@ -276,7 +276,7 @@ object ReminderScheduler {
                     val fireAt = if (notifyAt <= now) startAt - TimeUnit.MINUTES.toMillis(1) else notifyAt
                     if (fireAt <= now) continue
 
-                    val id = requestCodeFor(group, dayOffset, l.time?.code ?: 0)
+                    val id = requestCodeFor(group, dayOffset, l.time?.code ?: 0, l.roomNameSafe())
                     val pi = pendingIntent(ctx, group, l, id)
 
                     // Ближайшее напоминание ставим ТОЧНЫМ будильником.
@@ -382,8 +382,12 @@ object ReminderScheduler {
         return cal.timeInMillis
     }
 
-    private fun requestCodeFor(group: String, dayOffset: Int, pairCode: Int): Int =
-        (PREFIX + group + dayOffset + pairCode).hashCode()
+    private fun requestCodeFor(
+        group: String,
+        dayOffset: Int,
+        pairCode: Int,
+        room: String?,
+    ): Int = (PREFIX + group + dayOffset + pairCode + (room ?: "")).hashCode()
 
     private fun pendingIntent(ctx: Context, group: String, l: Lesson, id: Int): PendingIntent {
         val intent = Intent(ctx, ReminderReceiver::class.java).apply {
@@ -394,6 +398,9 @@ object ReminderScheduler {
             // не находила их: будильники от прошлых пересчётов оставались
             // висеть (проверено: 15 штук вместо 5).
             data = android.net.Uri.parse("miet://reminder/$id")
+            // Код будильника нужен и получателю: по нему строится номер
+            // уведомления, иначе две пары одного слота затирают друг друга.
+            putExtra(EXTRA_REMIND_ID, id)
             putExtra(EXTRA_GROUP, group)
             putExtra(EXTRA_TIME, l.time?.timeFrom)
             putExtra(EXTRA_PAIR, l.time?.code ?: 0)
@@ -486,6 +493,8 @@ object ReminderScheduler {
     const val EXTRA_SUBJECT = "subject"
     const val EXTRA_TEACHER = "teacher"
     const val EXTRA_ROOM = "room"
+    /** Код будильника: различает пары одного слота (они в разных аудиториях). */
+    const val EXTRA_REMIND_ID = "remind_id"
 
     /** Имя аудитории; у [RoomInfo] поле может быть числом. */
     private fun Lesson.roomNameSafe(): String? = room?.name?.trim()?.takeIf { it.isNotEmpty() }
@@ -546,7 +555,14 @@ class ReminderReceiver : BroadcastReceiver() {
         val contentPi = PendingIntent.getActivity(ctx, group.hashCode(), open, flags)
 
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val id = 1000 + group.hashCode()
+        // Номер уведомления — по КОДУ БУДИЛЬНИКА, а не только по группе.
+        //
+        // У группы бывает ДВЕ пары в одном слоте: у ТЭС-26-11О в среду 3-я
+        // пара — «Информатика» в 8307 и «Информатика» в 8306 (разные
+        // преподаватели). С номером по группе второе уведомление затирало
+        // первое, и напоминание приходило одно вместо двух — выглядело как
+        // «приходят не все».
+        val id = 1000 + intent.getIntExtra(ReminderScheduler.EXTRA_REMIND_ID, group.hashCode())
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(ctx, ReminderScheduler.CHANNEL_ID)
         } else {
