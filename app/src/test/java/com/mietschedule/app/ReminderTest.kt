@@ -237,4 +237,51 @@ class ReminderIdTest {
             src.contains("getIntExtra(ReminderScheduler.EXTRA_REMIND_ID"),
         )
     }
+
+    /**
+     * Роль, выбранная для просмотра, не должна гасить напоминания.
+     *
+     * Раньше пересчёт при роли, отличной от «студент», снимал все будильники
+     * и выходил: одного захода в экран аудиторий хватало, чтобы потерять
+     * пуши на весь день.
+     */
+    @Test
+    fun `чужая роль не снимает напоминания`() {
+        val src = srcText("ReminderScheduler.kt")
+        val body = src.substringAfter("private fun rescheduleBlocking")
+            .substringBefore("private fun cancelAll")
+        assertFalse(
+            "роль просмотра не должна гасить напоминания",
+            body.contains("prefs.role() != Role.STUDENT"),
+        )
+    }
+
+    /** Группа вне избранного не показывает уведомление, даже если будильник выжил. */
+    @Test
+    fun `уведомление не показывается для группы вне избранного`() {
+        val src = srcText("ReminderScheduler.kt")
+        assertTrue(
+            "получатель обязан проверить избранное перед показом",
+            src.contains("group !in GroupPrefs(ctx).favGroups(Role.STUDENT)"),
+        )
+    }
+
+    /**
+     * Код будильника записывается сразу после постановки.
+     *
+     * Если запись идёт только в конце, завершение процесса между постановкой
+     * и записью оставляет будильник без кода — снять его больше нечем, и он
+     * срабатывает даже для группы, убранной из избранного.
+     */
+    @Test
+    fun `код будильника записывается сразу после постановки`() {
+        val src = srcText("ReminderScheduler.kt")
+        val i = src.indexOf("plannedIds += id to group")
+        assertTrue("нет добавления кода в список", i >= 0)
+        val after = src.substring(i, minOf(i + 900, src.length))
+        assertTrue(
+            "код должен записываться сразу: иначе будильник нельзя снять",
+            after.contains("rememberPlanned(ctx, plannedIds)"),
+        )
+    }
 }
