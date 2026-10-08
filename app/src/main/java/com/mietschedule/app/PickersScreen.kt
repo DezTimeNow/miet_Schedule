@@ -315,6 +315,10 @@ fun AudiencePickerScreen(
     var query by remember { mutableStateOf("") }
     var openBldg by remember { mutableStateOf<String?>(null) }
     var favs by remember { mutableStateOf(prefs.favGroups(Role.AUDIENCE).toSet()) }
+    // Прогресс догрузки аудиторий из расписаний: (готово, всего).
+    // 0/0 — ещё не стартовало. Без него экран 3-4 секунды (343 запроса
+    // параллельно) висит с пустым телом, и это выглядит как зависание.
+    var loadProgress by remember { mutableStateOf(0 to 0) }
     // Фильтр свободных. showFree — включён ли, pairNo — на какой паре смотрим.
     var showFree by rememberSaveable { mutableStateOf(false) }
     var pairNo by rememberSaveable { mutableStateOf("") }
@@ -323,12 +327,17 @@ fun AudiencePickerScreen(
     LaunchedEffect(Unit) {
         // Сначала то, что сервер знает, — это быстро.
         // Кэш пуст после первой установки — тогда идём сразу в сеть.
+        // Первый шаг: список с сервера — быстро, но неполный. НЕ показываем
+        // его сразу: раньше loading снимался здесь, и экран на 12 секунд
+        // висел с неполным списком (136 из 194), а потом список «прыгал»
+        // — владелец описал это как микролаг. Теперь неполный список
+        // остаётся в памяти, но не рисуется, пока не закончится догрузка.
         val fromServer = withContext(Dispatchers.IO) {
             val c = api.cachedAudiences()
             if (c.isNotEmpty()) c else runCatching { api.fetchAudiences() }.getOrDefault(emptyList())
         }
         if (fromServer.isNotEmpty()) {
-            list = fromServer; loading = false
+            list = fromServer
         }
         // Потом дополняем аудиториями из расписаний: сайт отдаёт 136, а в паре
         // встречается 194 — без этого корпус 8 (8102, 8103, …) вообще не виден.
@@ -339,9 +348,18 @@ fun AudiencePickerScreen(
         // ОДИН проход по кэшу расписаний: функция отдаёт и список аудиторий, и
         // сами пары. Раньше занятость считалась вторым разбором того же кэша,
         // и открытие экрана занимало полминуты вместо нескольких секунд.
+        //
+        // ПЕРЕСБОРКА ИЗ КЭША ВСЕГДА: deriveAudiencesFromGroups читает кэши
+        // расписаний, а когда их нет — качает и САМ кладёт в кэш. Поэтому
+        // список аудиторий всегда строится из свежих данных (кэши обновляются
+        // фоново каждые 6 часов), без сети, когда кэш тёплый. TTL 7 дней у
+        // /audiences больше не при чём: ремонт аудитории отражается в
+        // пересборе из кэша, а не в недельном списке с сервера.
         val (extra, lessons) = withContext(Dispatchers.IO) {
             if (api.cachedSchedule(api.cachedGroups().firstOrNull() ?: "") == null) {
-                api.deriveAudiencesFromGroups(fetchGroupsIfNeeded = true)
+                api.deriveAudiencesFromGroups(fetchGroupsIfNeeded = true) { done, total ->
+                    loadProgress = done to total
+                }
             } else {
                 api.deriveAudiencesFromGroups()
             }
@@ -503,7 +521,7 @@ fun AudiencePickerScreen(
             MietTopBar(
                 title = "Аудитория",
                 subtitle = when {
-                    list.isEmpty() -> "Загрузка…"
+                    loading -> "Загрузка…"
                     // Фильтр включён, но пар сегодня нет: писать «свободно» было
                     // бы ложью — свободны все, потому что не занята ни одна.
                     showFree && noLessonsToday -> "Сегодня пар нет"
@@ -568,6 +586,29 @@ fun AudiencePickerScreen(
                         )
                     },
                 )
+            }
+
+            // Полоса прогресса догрузки: аудитории корпуса 8 (58 из 221)
+            // собираются из расписаний всех групп — 343 запроса. Без неё
+            // экран несколько секунд висит с пустым телом, и человек читает
+            // это как зависание. Полоса снимается вместе с loading.
+            if (loading && loadProgress.second > 0) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    val frac = if (loadProgress.second > 0)
+                        loadProgress.first.toFloat() / loadProgress.second else 0f
+                    LinearProgressIndicator(
+                        progress = { frac },
+                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                        color = MIET_BLUE,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                    Text(
+                        "Загружаю… ${loadProgress.first} из ${loadProgress.second}",
+                        fontSize = 11.sp,
+                        color = LocalAppColors.current.muted,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
             }
 
             // Фильтр по паре — виден только когда включены свободные.

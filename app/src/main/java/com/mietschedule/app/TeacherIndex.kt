@@ -225,26 +225,34 @@ object TeacherIndex {
 
         // Шесть потоков по его собственным группам: их мало, сервер не заметит.
         val pool = Executors.newFixedThreadPool(min(6, mine.size))
-        var ok = 0
+        val fetched = java.util.concurrent.ConcurrentHashMap<String, String>()
         try {
             pool.invokeAll(mine.map { g ->
                 Callable {
                     runCatching { api.fetchSchedule(g) }
-                        .onSuccess { ok++ }
+                        .onSuccess { raw ->
+                            fetched[g] = raw
+                        }
                         .onFailure { Log.w(TAG, "Не обновили $g: ${it.message}") }
                 }
             })
         } finally {
             pool.shutdown()
         }
-        if (ok == 0) return@withContext false
+        if (fetched.isEmpty()) return@withContext false
+
+        // Скачанное ОБЯЗАНО лечь в кэш: lessonsOf() ниже читает расписания
+        // групп из кэша, а markFresh() пишет метку «обновлено только что».
+        // Без записи экран показывал бы старые пары преподавателя под свежей
+        // подписью — обновление выглядело успешным, а данные не менялись.
+        api.saveSchedules(fetched)
 
         // Метка свежести — только ему, в его запись. Общая KEY_TS не трогаем:
         // она принадлежит полной пересборке [build] и всем 658 преподавателям.
         val fresh = System.currentTimeMillis()
         val lessons = lessonsOf(api, groups, teacherCode)
         markFresh(api, teacherCode, fresh, lessons.size)
-        Log.i(TAG, "Быстрое обновление: ${mine.size} групп, $ok скачано, ${lessons.size} пар")
+        Log.i(TAG, "Быстрое обновление: ${mine.size} групп, ${fetched.size} скачано, ${lessons.size} пар")
         true
     }
 

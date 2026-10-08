@@ -2,6 +2,10 @@ package com.mietschedule.app
 
 import android.util.Log
 import android.content.Context
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -356,10 +360,14 @@ internal fun roomLessonKey(l: Lesson): String =
      */
     suspend fun deriveAudiencesFromGroups(
         fetchGroupsIfNeeded: Boolean = false,
+        // Прогресс: (готово, всего). Вызывается по мере завершения групп —
+        // экран аудиторий показывает «Загружаю… N из 343» вместо статичной
+        // надписи, иначе 15 секунд пустого экрана выглядят как зависание.
+        progress: ((Int, Int) -> Unit)? = null,
     ): Pair<List<Audience>, List<Lesson>> {
         val gson = GsonHolder.gson
         val out = LinkedHashMap<Int, Audience>()
-        val allLessons = ArrayList<Lesson>()
+        val allLessons = java.util.Collections.synchronizedList(ArrayList<Lesson>())
 
         var cached = cachedGroups()
         if (cached.isEmpty() && fetchGroupsIfNeeded) {
@@ -372,15 +380,39 @@ internal fun roomLessonKey(l: Lesson): String =
 
         // Расписания групп кэшируются только когда пользователь реально открыл
         // расписание. Аудитории нужны уже на экране выбора, поэтому если кэша
-        // нет — забираем расписания напрямую (343 запроса, ~12 с, шестью
-        // потоками; заодно прогревается кэш для режима преподавателя).
+        // нет — забираем расписания напрямую (343 запроса; заодно прогревается
+        // кэш для режима преподавателя).
+        //
+        // ПАРАЛЛЕЛЬНО, а не последовательно: ранний вариант шёл по циклу
+        // for (g in cached) и тратил на обход 12+ секунд, из-за чего экран
+        // аудиторий выглядел зависшим. Восемь запросов одновременно при
+        // maxRequestsPerHost = 8 в OkHttp — обход укладывается в ~3-4 с.
+        // Прогресс отдаётся по каждому завершённому запросу, чтобы экран
+        // показывал движение, а не пустоту.
         val needFetch = cachedSchedule(cached.first()) == null
+        val total = cached.size
+        val done = java.util.concurrent.atomic.AtomicInteger(0)
+
+        val raws: Map<String, String?> = if (!needFetch) {
+            cached.associateWith { cachedSchedule(it) }
+        } else {
+            val semaphore = kotlinx.coroutines.sync.Semaphore(8)
+            kotlinx.coroutines.coroutineScope {
+                cached.map { g ->
+                    async {
+                        semaphore.withPermit {
+                            val raw = try { fetchSchedule(g) } catch (e: Exception) { null }
+                            val n = done.incrementAndGet()
+                            progress?.invoke(n, total)
+                            g to raw
+                        }
+                    }
+                }.awaitAll().toMap()
+            }
+        }
 
         for (g in cached) {
-            val raw = if (needFetch) {
-                try { fetchSchedule(g) } catch (e: Exception) { null }
-            } else cachedSchedule(g)
-            if (raw == null) continue
+            val raw = raws[g] ?: continue
             val data: List<Lesson> = try {
                 gson.fromJson(raw, ScheduleResponse::class.java)?.data ?: emptyList()
             } catch (e: Exception) {
@@ -394,6 +426,18 @@ internal fun roomLessonKey(l: Lesson): String =
                 if (name.isEmpty()) continue
                 if (code !in out) out[code] = Audience(code = code, name = name)
             }
+        }
+        // Только что скачанные расписания — в кэш, одним пакетом.
+        //
+        // Раньше эта функция была ЕДИНСТВЕННЫМ местом, которое качало 343
+        // расписания и не сохраняло их. Экран аудиторий с чистым кэшем
+        // повторял обход при каждом заходе: 343 запроса и полный парсинг
+        // заново. Теперь после первой загрузки второй заход читает кэш —
+        // ноль сети, мгновенно. Заодно прогревается кэш для режима
+        // преподавателя, которому он тоже нужен.
+        if (needFetch) {
+            val fetched = raws.mapNotNull { (g, raw) -> raw?.let { g to it } }.toMap()
+            if (fetched.isNotEmpty()) saveSchedules(fetched)
         }
         return out.values.toList() to allLessons
     }
