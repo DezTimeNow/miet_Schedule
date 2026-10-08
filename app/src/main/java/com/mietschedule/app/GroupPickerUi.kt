@@ -205,7 +205,7 @@ fun GroupPickerScreen(
                                         ) {
                                             Column(Modifier.weight(1f)) {
                                                 Text(code, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                                Text("${list.size} ${plural(list.size, "группа", "группы", "групп")}", fontSize = 11.sp, color = LocalAppColors.current.muted)
+                                                Text("${list.size} ${plural(list.size, "группа", "группы", "групп")}", fontSize = 12.sp, color = LocalAppColors.current.muted)
                                             }
                                             Text(
                                                 if (openCode == code) "\u2212" else "+",
@@ -276,7 +276,7 @@ private fun FavHeader(count: Int) {
     ) {
         Text("★ Избранное", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.favStar)
         Spacer(Modifier.width(6.dp))
-        Text("$count", fontSize = 11.sp, color = LocalAppColors.current.muted)
+        Text("$count", fontSize = 12.sp, color = LocalAppColors.current.muted)
     }
 }
 

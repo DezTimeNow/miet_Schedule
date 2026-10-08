@@ -1,13 +1,14 @@
 package com.mietschedule.app
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Star
@@ -24,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.PlatformTextStyle
@@ -47,11 +49,15 @@ import androidx.compose.material3.MaterialTheme
 private val BACK_SLOT = 48.dp
 
 /**
- * Сколько dp шапка отдаёт под кнопки справа: звезда + обновление + «Роль»
- * (+ резервы на экранах, где их нет). Заголовок ужимается на эту
- * величину, иначе он рассчитывается на всю ширину окна и переносится.
+ * Сколько dp шапка отдаёт под кнопки справа: звезда + обновление.
+ * Заголовок ужимается на эту величину, иначе он рассчитывается на всю
+ * ширину окна и переносится.
+ *
+ * Домик «На главную» убран, поэтому резерв стал меньше — заголовок
+ * получил больше места. Звезда держит слот всегда (резерв), обновление —
+ * всегда на экране.
  */
-private const val RESERVED_FOR_ACTIONS = 160
+private const val RESERVED_FOR_ACTIONS = 112
 
 /**
  * ЕДИНАЯ ШАПКА для всех экранов приложения.
@@ -69,10 +75,14 @@ private const val RESERVED_FOR_ACTIONS = 160
  * а не от того, что дописал разработчик в конкретном экране.
  *
  * СОСТАВ (слева направо), одинаковый на всех экранах:
- *   [‹ назад] [★] [⭯ обновить] [Роль]
+ *   [‹ назад] [★] [⭯ обновить]
  *
  * Звезда присутствует только там, где есть что любить (расписание), но место
  * под неё зарезервировано всегда — иначе она снова сдвинет соседей.
+ *
+ * Домика «На главную» в шапке НЕТ: переход на главную живёт в нижнем меню
+ * (Главная/Избранное/Настройки), которое есть на всех экранах. Второй вход
+ * на главную в шапке был лишним и путал пользователя.
  */
 /**
  * АДАПТИВНЫЙ КЕГЛЬ. Compose BOM 2024.12.01 не умеет autoSize (появился в
@@ -128,7 +138,13 @@ fun MietTopBar(
     homeSlotEmpty: Boolean = false,
 ) {
     TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MIET_BLUE),
+        // Градиент вместо плоского цвета: шапка выглядит приподнятой
+        // панелью, а не окрашенной полосой. TopAppBar сам не принимает
+        // Brush, поэтому прозрачный контейнер + фон-градиент модификатором.
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = Color.Transparent,
+        ),
+        modifier = Modifier.background(Depth25.topBar),
         navigationIcon = {
             if (onBack != null) {
                 IconButton(
@@ -151,7 +167,17 @@ fun MietTopBar(
             // и переносилось на вторую, а заголовок съезжал на подзаголовок
             // («АУДИТОРИ / Я»). maxLines = 1 запрещает перенос, а
             // autoSize ужимает текст под доступную ширину.
-            Column {
+            //
+            // Column центрирован по вертикали: у кнопок действий (обновить,
+            // звезда) высота IconButton равна всей высоте шапки, и без
+            // выравнивания одна строка заголовка прижимается к её верху —
+            // надпись «Избранное»/«Расписание МИЭТ» стоит выше кнопки
+            // обновить, и шапка выглядит перекошенной. CenterVertically
+            // ставит заголовок на одну линию с кнопками.
+            Column(
+                modifier = Modifier.fillMaxHeight(),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 val cfg = LocalConfiguration.current
                 val density = LocalDensity.current
                 // Ширина окна в dp: шапка занимает всю ширину минус слоты под
@@ -169,14 +195,23 @@ fun MietTopBar(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text(
-                    text = subtitle,
-                    color = LocalAppColors.current.currentGroup,
-                    fontSize = subtitleSp,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
-                )
+                // Подзаголовок рисуется ТОЛЬКО когда он непустой. Пустой
+                // Text всё равно занимает строку своей высоты, и вместе с
+                // заголовком этот стек центрируется в шапке — заголовок
+                // уезжает выше кнопки действий. На «Избранном» и главной
+                // подзаголовка нет, и из-за этой строки надпись стояла
+                // выше кнопки обновить. Проверено по bounds: центр
+                // заголовка 181 против центра иконки 217.
+                if (subtitle.isNotEmpty()) {
+                    Text(
+                        text = subtitle,
+                        color = LocalAppColors.current.currentGroup,
+                        fontSize = subtitleSp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         },
         actions = {
@@ -194,9 +229,14 @@ fun MietTopBar(
                 // есть) обновление стояло бы на 48 px левее, чем на остальных.
                 Spacer(Modifier.width(BACK_SLOT))
             }
-            // Место под «Избранное» в шапке больше не нужно: кнопка живёт в
-            // главном меню под выбором роли. Слот убираем целиком, чтобы
+            // Место под «Избранное» в шапке больше не нужно: кнопка живёт
+            // в главном меню под выбором роли. Слот убираем целиком, чтобы
             // заголовок стал шире на всех экранах.
+            //
+            // Кнопка «обновить» стоит последней (крайняя справа): домик
+            // «На главную» из шапки убран — переход на главную теперь в
+            // нижнем меню, которое есть на всех экранах. Второй вход на
+            // главную в шапке был лишним и путал пользователя.
             IconButton(
                 onClick = onRefresh,
                 enabled = !refreshing,
@@ -216,29 +256,6 @@ fun MietTopBar(
                     tint = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.size(22.dp)
                 )
-            }
-            // ДОМИК — возврат на главную. Раньше здесь стоял текст «Меню»,
-            // а ещё раньше «Роль», хотя кнопка вела не на выбор роли, а на
-            // домашний экран: на расписании с уже выбранной группой подпись
-            // обещала одно и делала другое. Иконка дома читается однозначно —
-            // это место, откуда уходят, а не место, куда приходят.
-            //
-            // Описание обязательно: без него TalkBack объявляет иконку
-            // молчаливой, и незрячий человек не узнает, что кнопка есть.
-            if (homeSlotEmpty) {
-                Spacer(Modifier.width(BACK_SLOT))
-            } else {
-                IconButton(
-                    onClick = onChangeRole,
-                    modifier = Modifier.semantics { contentDescription = "На главную" },
-                ) {
-                    Icon(
-                        Icons.Filled.Home,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
             }
         }
     )

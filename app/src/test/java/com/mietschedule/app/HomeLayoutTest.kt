@@ -149,34 +149,15 @@ class HomeLayoutTest {
     // ── 3. Домик вместо «Меню» ─────────────────────────────────────────────
 
     @Test
-    fun `кнопка Меню заменена иконкой дома`() {
+    fun `в шапке нет текстовой кнопки Меню`() {
         val bar = code("MietTopBar.kt")
         assertFalse(
             "Текстовая кнопка «Меню» должна быть заменена иконкой дома",
             bar.contains("Text(\"Меню\""),
         )
-        assertTrue("В шапке должна быть иконка дома", bar.contains("Icons.Filled.Home"))
-    }
-
-    /**
-     * На самой главной слот дома пуст.
-     *
-     * Кнопка, ведущая в себя же, читается как сломанная. Но слот резервируется
-     * обязательно — иначе заголовок на главной стоял бы на 48 px левее, чем на
-     * всех остальных экранах.
-     */
-    @Test
-    fun `на главной слот дома пуст но зарезервирован`() {
-        val bar = code("MietTopBar.kt")
-        assertTrue(
-            "Пустой слот под домом должен резервироваться шириной BACK_SLOT",
-            Regex("""homeSlotEmpty[\s\S]{0,200}?Spacer\(Modifier\.width\(BACK_SLOT\)\)""")
-                .containsMatchIn(bar),
-        )
-        assertTrue(
-            "Главная должна объявлять слот пустым",
-            code("HomeScreen.kt").contains("homeSlotEmpty = true"),
-        )
+        // Домика в шапке тоже нет: переход на главную — в нижнем меню.
+        assertFalse("В шапке не должно быть иконки дома", bar.contains("Icons.Filled.Home"))
+        assertTrue("В шапке должна быть кнопка обновить", bar.contains("Icons.Filled.Refresh"))
     }
 
     // ── 4. Порядок на экране ───────────────────────────────────────────────
@@ -185,7 +166,7 @@ class HomeLayoutTest {
      * Избранное → выбор роли → подменю. Порядок задан требованием.
      */
     @Test
-    fun `порядок на главной блок список добавление подменю`() {
+    fun `порядок на главной блок список добавление`() {
         val home = code("HomeScreen.kt")
         // Индексы считаем от начала самой функции: константы объявлены выше и
         // иначе нашли бы объявление, а не место отрисовки.
@@ -193,15 +174,76 @@ class HomeLayoutTest {
         val blockIdx = body.indexOf("NextLessonCard(")
         val listIdx = body.indexOf("FAV_LIST_TITLE")
         val addIdx = body.indexOf("onClick = onAdd")
-        val menuIdx = body.indexOf("horizontalArrangement = Arrangement.Center")
+        val aboutIdx = body.indexOf("onClick = onAbout")
         assertTrue("Не найден блок «сейчас и дальше»", blockIdx > 0)
         assertTrue("Не найден список избранного", listIdx > 0)
         assertTrue("Не найдена кнопка добавления", addIdx > 0)
-        assertTrue("Не найдено служебное подменю", menuIdx > 0)
+        assertTrue("Не найдена кнопка «О программе»", aboutIdx > 0)
         assertTrue(
-            "Порядок должен быть: блок, список, добавление, подменю. " +
-                "На деле: блок=$blockIdx, список=$listIdx, добавление=$addIdx, подменю=$menuIdx",
-            blockIdx < listIdx && listIdx < addIdx && addIdx < menuIdx,
+            "Порядок должен быть: блок, список, добавление, «О программе». " +
+                "На деле: блок=$blockIdx, список=$listIdx, добавление=$addIdx, опрограмме=$aboutIdx",
+            blockIdx < listIdx && listIdx < addIdx && addIdx < aboutIdx,
+        )
+    }
+
+    /**
+     * Нижняя навигация: три вкладки — Главная, Игра, Настройки.
+     *
+     * Прежние текстовые кнопки подменю («Настройки», «Мини-игра»,
+     * «О программе») заменены стандартным NavigationBar. «О программе» —
+     * справка, а не раздел, поэтому остаётся отдельной кнопкой в конце.
+     */
+    @Test
+    fun `нижняя навигация с тремя вкладками на всех экранах`() {
+        // Меню общее на всех экранах: живёт в AppRoot (Scaffold+NavigationBar),
+        // а не в HomeScreen. Проверяем MainActivity.
+        val root = code("MainActivity.kt")
+        assertTrue(
+            "Должен быть NavigationBar — стандартная нижняя навигация Android",
+            root.contains("NavigationBar("),
+        )
+        // Три вкладки: Главная, Избранное, Настройки.
+        val navCount = Regex("""NavigationBarItem\(""").findAll(root).count()
+        assertEquals("Вкладок должно быть три", 3, navCount)
+        assertTrue("Нет вкладки «Настройки»", root.contains("""Text("Настройки")"""))
+        assertTrue("Нет вкладки «Избранное»", root.contains("""Text("Избранное")"""))
+        assertTrue("Нет вкладки «Главная»", root.contains("""Text("Главная")"""))
+        // Вкладки переключают экран через goTo() — ядро навигации не задето.
+        assertTrue(
+            "Вкладка главной должна вести на главный экран",
+            root.contains("goTo(Screen.HOME)"),
+        )
+        assertTrue(
+            "Вкладка избранного должна вести на экран избранного",
+            root.contains("goTo(Screen.FAVORITES)"),
+        )
+        assertTrue(
+            "Вкладка настроек должна вести на экран настроек",
+            root.contains("goTo(Screen.SETTINGS)"),
+        )
+        // В HomeScreen нижнего меню больше нет — только шапка и контент.
+        assertFalse(
+            "NavigationBar не должен дублироваться в HomeScreen",
+            code("HomeScreen.kt").contains("NavigationBar("),
+        )
+    }
+
+    /**
+     * «О программе» остаётся кнопкой, а не вкладкой: это справка, а не
+     * раздел. Четыре вкладки в BottomNav выглядят как лишняя.
+     */
+    @Test
+    fun `о программе остаётся кнопкой а не вкладкой`() {
+        val home = code("HomeScreen.kt")
+        // В BottomNav только три вкладки — «О программе» среди них нет.
+        val nav = home.substringAfter("NavigationBar(").substringBefore(") { pad ->")
+        assertFalse(
+            "«О программе» не должна быть вкладкой нижней навигации",
+            nav.contains("""Text("О программе")"""),
+        )
+        assertTrue(
+            "«О программе» остаётся отдельной кнопкой в конце экрана",
+            home.contains("onClick = onAbout"),
         )
     }
 
@@ -230,39 +272,6 @@ class HomeLayoutTest {
     }
 
     // ── 5. Подменю: три кнопки, «Избранное» не в нём ──────────────────────
-
-    @Test
-    fun `в подменю три кнопки и нет избранного`() {
-        val home = code("HomeScreen.kt")
-        val menu = home.substringAfter("horizontalArrangement = Arrangement.Center")
-        val buttons = menu.substringBefore("}\n        }")
-        assertTrue("Нет «Настройки»", buttons.contains("Text(\"Настройки\""))
-        assertTrue("Нет «О программе»", buttons.contains("Text(\"О программе\""))
-        assertTrue("Нет мини-игры", buttons.contains("Text(GAME_TAGLINE"))
-        assertFalse(
-            "«Избранное» в подменю быть не должно: вход один — из подписи блока",
-            buttons.contains("Text(\"Избранное\""),
-        )
-    }
-
-    /**
-     * Цвет мини-игры — как у соседей.
-     *
-     * Владелец заметил сразу после переноса: серая подпись среди синих
-     * выглядит как отключённая кнопка, хотя игра доступна всегда.
-     */
-    @Test
-    fun `мини-игра нарисована тем же цветом что и соседние кнопки`() {
-        val home = code("HomeScreen.kt")
-        assertTrue(
-            "Подпись мини-игры должна быть MIET_BLUE, а не приглушённой",
-            Regex("""Text\(GAME_TAGLINE,\s*color = MIET_BLUE""").containsMatchIn(home),
-        )
-        assertFalse(
-            "Приглушённый цвет для мини-игры больше не используется",
-            Regex("""Text\(GAME_TAGLINE,\s*color = LocalAppColors""").containsMatchIn(home),
-        )
-    }
 
     // ── 6. Навигация ───────────────────────────────────────────────────────
 

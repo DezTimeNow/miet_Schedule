@@ -264,7 +264,7 @@ fun TeacherPickerScreen(
                                             Text(t.name, fontSize = 13.sp)
                                             Text(
                                                 "${t.short} • ${t.pairCount} пар",
-                                                fontSize = 11.sp, color = LocalAppColors.current.muted
+                                                fontSize = 12.sp, color = LocalAppColors.current.muted
                                             )
                                         }
                                         IconButton(onClick = {
@@ -604,7 +604,7 @@ fun AudiencePickerScreen(
                     )
                     Text(
                         "Загружаю… ${loadProgress.first} из ${loadProgress.second}",
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = LocalAppColors.current.muted,
                         modifier = Modifier.padding(top = 3.dp),
                     )
@@ -660,7 +660,7 @@ fun AudiencePickerScreen(
                                 onClick = { pairNo = "" },
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             ) {
-                                Text("Вся неделя", fontSize = 11.sp, color = MIET_BLUE)
+                                Text("Вся неделя", fontSize = 12.sp, color = MIET_BLUE)
                             }
                         }
                     }
@@ -746,7 +746,7 @@ fun AudiencePickerScreen(
                                         Column(Modifier.weight(1f)) {
                                             Text(bldg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                             Text("${items_.size} " + plural(items_.size, "аудитория", "аудитории", "аудиторий"),
-                     fontSize = 11.sp, color = LocalAppColors.current.muted)
+                     fontSize = 12.sp, color = LocalAppColors.current.muted)
                                         }
                                         Text(
                                             if (openBldg == bldg) "\u2212" else "+",

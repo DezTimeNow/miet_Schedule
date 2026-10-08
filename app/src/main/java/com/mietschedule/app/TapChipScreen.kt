@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,6 +71,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
 import com.mietschedule.app.R
 
 /**
@@ -171,6 +173,12 @@ fun TapChipScreen(onBack: () -> Unit) {
     // счётчике через graphicsLayer, то есть без влияния на раскладку.
     val press = remember { Animatable(0f) }
     val counterScale = remember { Animatable(1f) }
+
+    // Всплывающее «+1» над точкой тапа. null — всплывать нечему. Появление
+    // над именно той точкой, куда ткнули, а не над центром чипа: глаз
+    // привязывает отклик к пальцу. Живёт своим списком: несколько «+1»
+    // могут быть в воздухе одновременно при быстром тапе.
+    var pops by remember { mutableStateOf(listOf<FloatingPlusOne>()) }
 
     LaunchedEffect(Unit) {
         val loaded = ChipTop.loadTop()
@@ -524,15 +532,34 @@ fun TapChipScreen(onBack: () -> Unit) {
                                 }
                                 .pointerInput(Unit) {
                                     detectTapGestures(
-                                        onPress = {
+                                        onPress = { offset ->
                                             press.animateTo(1f, tween(90))
                                             tryAwaitRelease()
                                             press.animateTo(0f, tween(160))
                                         },
-                                        onTap = { awardPoint() },
+                                        onTap = { offset ->
+                                            // Точка тапа — во всплывающее
+                                            // «+1»: координаты внутри чипа.
+                                            val id = System.nanoTime()
+                                            val pop = FloatingPlusOne(id, offset.x, offset.y)
+                                            pops = pops + pop
+                                            scope.launch {
+                                                kotlinx.coroutines.delay(700)
+                                                pops = pops.filterNot { it.id == id }
+                                            }
+                                            awardPoint()
+                                        },
                                     )
                                 }
                         )
+
+                        // Всплывающие «+1» в точках тапа. Box поверх чипа:
+                        // не участвует в измерении, поэтому вёрстка не
+                        // дёргается. Внутри — по одному AnimatedVisibility на
+                        // каждый всплывший «+1»: выезд вверх с затуханием.
+                        pops.forEach { pop ->
+                            FloatingPlusOneText(pop)
+                        }
                     }
 
                     Spacer(Modifier.height(10.dp))
@@ -658,6 +685,45 @@ private const val PLACE_BOX_HEIGHT = 22
 // появляется только при отказе, и по той же причине должно не двигать
 // вёрстку.
 private const val REJECT_BOX_HEIGHT = 20
+
+/**
+ * Всплывающее «+1» над точкой тапа в мини-игре.
+ *
+ * Отдельный data class на уровне файла, а не внутри composable: состояние
+ * игрового экрана держит список таких точек, и вложенный класс нельзя
+ * сослаться из вспомогательной composable-функции.
+ */
+private data class FloatingPlusOne(val id: Long, val x: Float, val y: Float)
+
+/**
+ * Одно всплывающее «+1». Выезд вверх с затуханием за 600 мс.
+ *
+ * Box не участвует в измерении родителя (позиционирование через offset),
+ * поэтому вёрстка игрового экрана не дёргается — по той же причине, по
+ * которой счётчик тапа рисуется через graphicsLayer.
+ */
+@Composable
+private fun FloatingPlusOneText(pop: FloatingPlusOne) {
+    val rise = remember { Animatable(0f) }
+    LaunchedEffect(pop.id) {
+        rise.animateTo(1f, tween(600))
+    }
+    val alpha = (1f - rise.value).coerceIn(0f, 1f)
+    Text(
+        "+1",
+        color = MIET_BLUE,
+        fontWeight = FontWeight.Bold,
+        fontSize = 20.sp,
+        modifier = Modifier
+            .offset {
+                IntOffset(
+                    pop.x.toInt() - 12,
+                    pop.y.toInt() - 24 - (rise.value * 60).toInt(),
+                )
+            }
+            .graphicsLayer { this.alpha = alpha },
+    )
+}
 
 /** Имя игрока и кнопки: смена имени и правила. */
 @Composable
@@ -801,7 +867,7 @@ private fun NickDialog(
                 singleLine = true,
                 label = { Text("До ${ChipTop.NICK_MAX} символов", fontSize = 13.sp) },
                 supportingText = {
-                    Text("${trimmed.length} / ${ChipTop.NICK_MAX}", fontSize = 11.sp)
+                    Text("${trimmed.length} / ${ChipTop.NICK_MAX}", fontSize = 12.sp)
                 },
             )
         },

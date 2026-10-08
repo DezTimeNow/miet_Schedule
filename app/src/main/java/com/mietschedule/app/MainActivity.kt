@@ -20,9 +20,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 
 internal val MIET_BLUE = Color(0xFF0057B8)
@@ -129,6 +134,10 @@ internal fun backTargetFor(
         Screen.ABOUT -> Screen.HOME
         Screen.REPORT -> Screen.ABOUT
         Screen.CHIP_GAME -> Screen.HOME
+        // Избранное — вкладка нижней навигации, как и главная: из неё
+        // «Назад» ведёт на главную, а не по истории переходов. Так же, как
+        // настроек: вкладки равноправны, назад возвращает на главную.
+        Screen.FAVORITES -> Screen.HOME
         Screen.SCHEDULE -> if (hasSelection) Screen.PICK_ENTITY else Screen.HOME
         // ГЛАВНАЯ — точка входа, из неё возвращаться некуда. Отдаём саму себя:
         // BackHandler на ней выключен, а стрелки в шапке у главной нет.
@@ -273,6 +282,15 @@ internal enum class Screen {
      */
     HOME,
     PICK_ROLE, PICK_ENTITY, SCHEDULE, SETTINGS, ABOUT, REPORT, CHIP_GAME,
+    /**
+     * ИЗБРАННОЕ: список отмеченных звёздами групп, преподавателей и
+     * аудиторий. Отдельный экран, а не блок на главной, потому что теперь
+     * это вкладка нижней навигации: у вкладки должна быть своя шапка
+     * и свой снимок избранного, и дублировать список на главной значило бы
+     * показывать одно и то же дважды. Главная остаётся точкой входа —
+     * блок «сейчас и дальше» и кнопка «Добавить».
+     */
+    FAVORITES,
 }
 
 @Composable
@@ -626,7 +644,47 @@ fun AppRoot(
     }
 
 
-    when (screen) {
+    // ───── НИЖНЯЯ НАВИГАЦИЯ НА ВСЕХ ЭКРАНАХ ─────
+    //
+    // Общий Scaffold с NavigationBar живёт здесь, а не в HomeScreen: меню
+    // «Главная / Избранное / Настройки» должно быть на КАЖДОМ экране, а не
+    // только на главной. Каждый экран держит свою шапку (TopAppBar), но
+    // нижнее меню — общая оболочка, один источник правды.
+    //
+    // Переходы вкладок идут через goTo(): ядро навигации (screenOrigin,
+    // backTargetFor) работает как прежде — вкладки просто меняют экран,
+    // «Назад» по-прежнему ведёт туда, откуда пришли.
+    Scaffold(
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 3.dp,
+            ) {
+                NavigationBarItem(
+                    selected = screen == Screen.HOME,
+                    onClick = { if (screen != Screen.HOME) goTo(Screen.HOME) },
+                    icon = { Icon(Icons.Filled.Home, contentDescription = null) },
+                    label = { Text("Главная") },
+                )
+                NavigationBarItem(
+                    selected = screen == Screen.FAVORITES,
+                    onClick = { if (screen != Screen.FAVORITES) goTo(Screen.FAVORITES) },
+                    icon = { Icon(Icons.Filled.Star, contentDescription = null) },
+                    label = { Text("Избранное") },
+                )
+                NavigationBarItem(
+                    selected = screen == Screen.SETTINGS,
+                    onClick = { if (screen != Screen.SETTINGS) goTo(Screen.SETTINGS) },
+                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                    label = { Text("Настройки") },
+                )
+            }
+        }
+    ) { pad ->
+        // pad — отступ под нижнее меню. Каждый экран получает его как
+        // внутренний отступ контента, чтобы список не уезжал под панель.
+        Box(Modifier.padding(pad)) {
+            when (screen) {
         // ГЛАВНАЯ. Блок «сейчас и дальше», список избранного кнопками,
         // кнопка добавления и служебное подменю.
         Screen.HOME -> HomeScreen(
@@ -639,6 +697,7 @@ fun AppRoot(
             onAbout = { goTo(Screen.ABOUT) },
             onSettings = { goTo(Screen.SETTINGS) },
             onOpenChipGame = { goTo(Screen.CHIP_GAME) },
+            onOpenFavorites = { goTo(Screen.FAVORITES) },
             refreshing = refreshing,
         )
 
@@ -782,6 +841,16 @@ fun AppRoot(
         // или группы, а результат уходит на скрипт таблицы лидеров.
         Screen.CHIP_GAME -> TapChipScreen(onBack = { screen = backTargetFor(Screen.CHIP_GAME, selection != null, screenOrigin) })
 
+        // ───────── вкладка «Избранное» ─────────
+        Screen.FAVORITES -> FavoritesScreen(
+            prefs = prefs,
+            onOpenFavorite = { r, value -> openFromMenu(r, value) },
+            onBack = { screen = backTargetFor(Screen.FAVORITES, selection != null, screenOrigin) },
+            onRefresh = { refreshCurrent() },
+            refreshing = refreshing,
+            onAdd = { goTo(Screen.PICK_ROLE) },
+        )
+
         // Расписание без выбранной сущности показывать нечем: экран взял бы
         // пустую группу. Раньше здесь стояло selection!!, и любой путь,
         // обнулявший выбор, приводил к падению. Теперь это тихий переход
@@ -815,6 +884,8 @@ fun AppRoot(
             onChangeRole = { goTo(Screen.HOME) },
             onScreenState = { n, err -> reportLessons = n; reportError = err },
         )
+            }
+        }
     }
 }
 

@@ -175,7 +175,7 @@ fun SettingsScreen(
                         label = {
                             Text(
                                 ReminderScheduler.leadLabel(minutes).removePrefix("за "),
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                             )
                         },
                         modifier = Modifier.weight(1f),
@@ -191,7 +191,7 @@ fun SettingsScreen(
                     "Напоминания выключены. Включите, чтобы не пропускать пары " +
                         "избранных групп"
                 },
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = LocalAppColors.current.muted,
                 modifier = Modifier.padding(top = 6.dp),
             )

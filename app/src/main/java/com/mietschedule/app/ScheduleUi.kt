@@ -322,14 +322,14 @@ fun ScheduleScreen(
             ) {
                 Text(
                     LastUpdated.fullLine(lastChecked, lastUpdated),
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = LocalAppColors.current.muted,
                     modifier = Modifier.weight(1f),
                 )
                 if (refreshNote.isNotEmpty()) {
                     Text(
                         refreshNote,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = if (refreshing) MIET_BLUE else LocalAppColors.current.muted,
                     )
                 }
@@ -546,7 +546,7 @@ fun ScheduleScreen(
                                     }
                                     if (day == markedDay) {
                                         Spacer(Modifier.width(8.dp))
-                                        Text("— сегодня", fontSize = 11.sp, color = MIET_BLUE)
+                                        Text("— сегодня", fontSize = 12.sp, color = MIET_BLUE)
                                     }
                                 }
                             }

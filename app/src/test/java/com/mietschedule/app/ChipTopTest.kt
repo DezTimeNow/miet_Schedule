@@ -336,7 +336,7 @@ class ChipTopTest {
      * защищала бы уже отменённое решение.
      */
     @Test
-    fun `игра стоит простой ссылкой в самом низу главной`() {
+    fun `игра стоит текстовой ссылкой после о программе`() {
         val home = srcFile("HomeScreen.kt")
         // Карточки больше нет — она занимала место в первом экране.
         assertFalse(
@@ -347,31 +347,31 @@ class ChipTopTest {
             "Вызов GameCard должен исчезнуть вместе с карточкой",
             home.contains("GameCard("),
         )
+        // Игра — текстовая ссылка внизу, а не вкладка BottomNav: это
+        // развлечение, а не раздел навигации. Вкладки: Главная, Избранное,
+        // Настройки.
+        assertFalse(
+            "Игры не должно быть в нижней навигации",
+            Regex("""Text\("Игра"\)""").containsMatchIn(home),
+        )
         assertTrue(
-            "В подменю главной должна быть ссылка на мини-игру",
-            home.contains("GAME_TAGLINE"),
+            "Игра должна остаться текстовой ссылкой",
+            home.contains("Text(GAME_TAGLINE"),
         )
         assertTrue(
             "Ссылка должна звать открытие игры",
-            home.contains("onOpenChipGame?.invoke()"),
+            home.contains("onClick = { onOpenChipGame?.invoke() }"),
         )
-        // Цвет — как у соседних кнопок. Серая подпись читалась как
-        // отключённая кнопка, хотя игра доступна всегда.
-        assertTrue(
-            "Подпись мини-игры должна быть того же цвета, что и соседние кнопки",
-            Regex("""Text\(GAME_TAGLINE, color = MIET_BLUE""").containsMatchIn(home),
-        )
-        // Стоит в одном ряду с «Настройки» и «О программе».
-        val settingsIdx = home.indexOf("Text(\"Настройки\"")
+        // Ссылка стоит после «О программе» — по просьбе владельца.
+        val aboutIdx = home.indexOf("""Text("О программе"""")
         val gameIdx = home.indexOf("Text(GAME_TAGLINE")
-        val aboutIdx = home.indexOf("Text(\"О программе\"")
         assertTrue(
-            "Не найдены подписи кнопок подменю",
-            settingsIdx > 0 && gameIdx > 0 && aboutIdx > 0,
+            "Не найдены ссылки «О программе» и мини-игры",
+            aboutIdx > 0 && gameIdx > 0,
         )
         assertTrue(
-            "Мини-игра должна стоять в ряду кнопок, а не до или после него",
-            settingsIdx < gameIdx && gameIdx < aboutIdx,
+            "Мини-игра должна стоять после «О программе»",
+            aboutIdx < gameIdx,
         )
     }
 
@@ -490,19 +490,26 @@ class ChipTopTest {
      * стирала сохранённый выбор группы.
      */
     @Test
-    fun `кнопка в шапке ведёт на главную и не стирает выбор`() {
+    fun `в шапке нет кнопки домой переход на главную в нижнем меню`() {
         val bar = srcFile("MietTopBar.kt")
-        // Требование владельца от 0.62: «кнопку меню переделать в кнопку с
-        // домиком, просто как домашняя». Текст «Меню» описывал не действие,
-        // а то, что было на экране до этого.
-        assertTrue("В шапке должна быть иконка дома", bar.contains("Icons.Filled.Home"))
+        // Домик «На главную» из шапки убран: переход на главную теперь в
+        // нижнем меню (Главная/Избранное/Настройки), которое есть на всех
+        // экранах. Второй вход на главную в шапке был лишним.
+        assertFalse("В шапке не должно быть иконки дома", bar.contains("Icons.Filled.Home"))
         assertFalse("Текстовая кнопка «Меню» должна уйти", bar.contains("Text(\"Меню\""))
         assertFalse("Старое название «Роль» должно уйти", bar.contains("Text(\"Роль\""))
+        // Кнопка обновить остаётся и стоит крайней справа.
+        assertTrue("В шапке должна быть кнопка обновить", bar.contains("Icons.Filled.Refresh"))
 
         val root = srcFile("MainActivity.kt")
         assertFalse(
             "«Меню» не должен стирать сохранённую роль и группу",
             root.contains("onChangeRole = {\n                prefs.clear()"),
+        )
+        // Нижнее меню общее на всех экранах — живёт в AppRoot, не в HomeScreen.
+        assertTrue(
+            "NavigationBar должен быть в AppRoot (общий на всех экранах)",
+            root.contains("NavigationBar("),
         )
     }
 
@@ -1955,7 +1962,13 @@ class ChipTopTest {
         assertEquals(
             "обработчик тапа должен звать общий путь",
             1,
-            Regex("""onTap = \{ awardPoint\(\) \}""").findAll(game).count(),
+            Regex("""onTap = \{ offset ->""").findAll(game).count(),
+        )
+        // Всплывающее «+1» — визуальная часть; начисление очка по-прежнему
+        // живёт только в общем пути awardPoint(), куда зовёт и тап, и диктор.
+        assertTrue(
+            "начисление из всплывающего «+1» не должно дублироваться",
+            game.contains("val pop = FloatingPlusOne(id, offset.x, offset.y)"),
         )
     }
 

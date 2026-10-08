@@ -1,8 +1,11 @@
 package com.mietschedule.app
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -13,17 +16,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apartment
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,8 +43,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -71,6 +85,15 @@ internal const val FAV_LIST_TITLE = "Избранное:"
 internal const val FAV_EMPTY_HINT = "Отметь звездой группу — расписание появится здесь"
 
 /**
+ * Крупная строка пустого состояния избранного.
+ *
+ * Раньше под заголовком «Избранное:» висела одна мелкая подсказка, и
+ * пустой экран читался как поломка. Теперь это иконка-звезда, крупная
+ * строка-заголовок и та же подсказка действием.
+ */
+internal const val FAV_EMPTY_TITLE = "Здесь пока пусто"
+
+/**
  * ГЛАВНАЯ СТРАНИЦА.
  *
  * Требование владельца от 0.65: «кнопку избранное и меню избранное убираем с
@@ -102,7 +125,6 @@ internal const val FAV_EMPTY_HINT = "Отметь звездой группу �
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
-    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
 )
 @Composable
 fun HomeScreen(
@@ -120,6 +142,8 @@ fun HomeScreen(
     onAbout: () -> Unit = {},
     onSettings: () -> Unit = {},
     onOpenChipGame: (() -> Unit)? = null,
+    /** Открыть вкладку «Избранное» нижней навигации. */
+    onOpenFavorites: () -> Unit = {},
 ) {
     // Снимок избранного читается на каждом входе на главную. remember без
     // ключа здесь безопасен: при переходе на другой экран главная выходит из
@@ -145,6 +169,9 @@ fun HomeScreen(
                 homeSlotEmpty = true,
             )
         }
+        // Нижнее меню (Главная/Избранное/Настройки) здесь больше нет: оно
+        // общее на всех экранах и живёт в AppRoot. Экран держит только свою
+        // шапку и контент.
     ) { pad ->
         Column(
             Modifier
@@ -157,7 +184,7 @@ fun HomeScreen(
             if (refreshing && refreshNote.isNotEmpty()) {
                 Text(
                     refreshNote,
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MIET_BLUE,
                     modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp),
                 )
@@ -179,27 +206,68 @@ fun HomeScreen(
 
             // ───── СПИСОК ИЗБРАННОГО ─────
             //
-            // Быстрый доступ: одна кнопка на избранное, расписание
-            // открывается сразу. Звезда снимается внутри расписания, в шапке,
-            // поэтому отдельного экрана избранного нет.
-            Text(
-                FAV_LIST_TITLE,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = LocalAppColors.current.muted,
-                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
-            )
+            // Ушёл на отдельный экран-вкладку «Избранное» (см. [FavoritesScreen]).
+            // Раньше он висел здесь, но с появлением вкладки «Избранное» в
+            // нижней навигации один и тот же список в двух местах — это
+            // дублирование: пользователь путается, какой из них главный.
+            // Главная теперь отвечает на два вопроса: «что сейчас» (блок
+            // «сейчас и дальше») и «куда добавить» (кнопка «Добавить»).
+            // Сам список избранного живёт на своей вкладке.
             if (favs.isEmpty()) {
-                Text(
-                    FAV_EMPTY_HINT,
-                    fontSize = 13.sp,
-                    color = LocalAppColors.current.muted,
-                    modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 2.dp),
-                )
+                // Пустое состояние с иконкой: на главной оно подсказывает,
+                // что делать дальше. Звезда-контур прямо говорит, какое
+                // действие наполнит избранное.
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        Icons.Outlined.StarBorder,
+                        contentDescription = null,
+                        tint = LocalAppColors.current.starInactive,
+                        modifier = Modifier.size(56.dp),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        FAV_EMPTY_TITLE,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = LocalAppColors.current.dim,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        FAV_EMPTY_HINT,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LocalAppColors.current.muted,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             } else {
-                favs.forEach { entry ->
-                    FavEntryCard(entry) { onOpenFavorite(entry.role, entry.value) }
+                Text(
+                    FAV_LIST_TITLE,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = LocalAppColors.current.muted,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                )
+                favs.take(3).forEachIndexed { index, entry ->
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(animationSpec = tween(300, delayMillis = index * 60)) +
+                            slideInVertically(animationSpec = tween(300, delayMillis = index * 60)) { it / 3 },
+                    ) {
+                        FavEntryCard(entry) { onOpenFavorite(entry.role, entry.value) }
+                    }
                     Spacer(Modifier.height(8.dp))
+                }
+                if (favs.size > 3) {
+                    Text(
+                        "Ещё ${favs.size - 3} — во вкладке «Избранное»",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalAppColors.current.muted,
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                    )
                 }
             }
 
@@ -219,31 +287,22 @@ fun HomeScreen(
 
             Spacer(Modifier.height(18.dp))
 
-            // ───── СЛУЖЕБНОЕ ПОДМЕНЮ ─────
-            //
-            // Кнопки в ряд: на Honor Magic V2 шириной 1200 px при density 3
-            // четыре подписи в линию обрезались, поэтому FlowRow переносит их
-            // целиком, а не рвёт строку между словами.
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalArrangement = Arrangement.Center,
+            // «О программе» и «Мини-игра» — текстовые ссылки внизу экрана.
+            // Обе остались кнопками, а не вкладками BottomNav: это справка
+            // и развлечение, а не разделы навигации. Порядок: «О программе»,
+            // затем «Мини-игра» — справка важнее игры.
+            TextButton(
+                onClick = onAbout,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
-                TextButton(onClick = onSettings) {
-                    Text("Настройки", color = MIET_BLUE, fontSize = 13.sp)
-                }
-                TextButton(
-                    onClick = { onOpenChipGame?.invoke() },
-                    enabled = onOpenChipGame != null,
-                ) {
-                    // Цвет MIET_BLUE, а не приглушённый: мини-игра — такой же
-                    // доступ к экрану, как настройки и «О программе», и серая
-                    // подпись читалась как отключённая кнопка.
-                    Text(GAME_TAGLINE, color = MIET_BLUE, fontSize = 13.sp)
-                }
-                TextButton(onClick = onAbout) {
-                    Text("О программе", color = MIET_BLUE, fontSize = 13.sp)
-                }
+                Text("О программе", color = MIET_BLUE, style = MaterialTheme.typography.labelLarge)
+            }
+            TextButton(
+                onClick = { onOpenChipGame?.invoke() },
+                enabled = onOpenChipGame != null,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text(GAME_TAGLINE, color = MIET_BLUE, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -263,11 +322,22 @@ private fun FavEntryCard(entry: FavEntry, onClick: () -> Unit) {
         Role.TEACHER -> Icons.Filled.Person
         Role.AUDIENCE -> Icons.Filled.Apartment
     }
+    val interaction = remember { MutableInteractionSource() }
+    val scale = Depth25.pressScale(interaction)
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            // Анимация нажатия: карточка чуть уменьшается под пальцем —
+            // продавленная поверхность. Вёрстку не трогает (graphicsLayer).
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(14.dp))
-            .clickable { onClick() },
+            // Цветная тень вместо серой по умолчанию: под синей карточкой
+            // синяя тень читается как настоящая, чёрная — как грязь.
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(14.dp), ambientColor = Depth25.cardShadow, spotColor = Depth25.cardShadow)
+            .clickable(interactionSource = interaction, indication = ripple()) { onClick() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(2.dp),
     ) {
@@ -306,11 +376,18 @@ private fun HomeActionCard(
     title: String,
     onClick: () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val scale = Depth25.pressScale(interaction)
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(14.dp))
-            .clickable { onClick() },
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(14.dp), ambientColor = Depth25.cardShadow, spotColor = Depth25.cardShadow)
+            .clickable(interactionSource = interaction, indication = ripple()) { onClick() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(2.dp),
     ) {
@@ -440,6 +517,106 @@ private fun AddPickerCard(role: Role, onClick: () -> Unit) {
                 color = MIET_BLUE,
                 fontWeight = FontWeight.Bold,
             )
+        }
+    }
+}
+
+/**
+ * ВКЛАДКА «ИЗБРАННОЕ» нижней навигации.
+ *
+ * Полный список отмеченных звёздами групп, преподавателей и аудиторий.
+ * Раньше он висел прямо на главной, но с появлением вкладки «Избранное»
+ * дублировать его в двух местах — значит путать пользователя: какой из
+ * списков главный. Главная теперь отвечает на «что сейчас» и «куда
+ * добавить», а весь список избранного живёт здесь.
+ *
+ * На главной показаны только первые три — быстрый доступ без перехода,
+ * остальные — здесь.
+ */
+@Composable
+fun FavoritesScreen(
+    prefs: GroupPrefs,
+    onOpenFavorite: (Role, String) -> Unit,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    refreshing: Boolean = false,
+    /** Открыть выбор группы/преподавателя/аудитории — вход в «Добавить». */
+    onAdd: () -> Unit = {},
+) {
+    val favs = remember { favSnapshot(prefs) }
+    Scaffold(
+        topBar = {
+            MietTopBar(
+                title = "Избранное",
+                subtitle = if (favs.isEmpty()) "" else "${favs.size} " + plural(favs.size, "запись", "записи", "записей"),
+                onRefresh = onRefresh,
+                onChangeRole = {},
+                refreshing = refreshing,
+                onBack = onBack,
+            )
+        },
+    ) { pad ->
+        Column(
+            Modifier
+                .padding(pad)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            if (favs.isEmpty()) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        Icons.Outlined.StarBorder,
+                        contentDescription = null,
+                        tint = LocalAppColors.current.starInactive,
+                        modifier = Modifier.size(64.dp),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        FAV_EMPTY_TITLE,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = LocalAppColors.current.dim,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        FAV_EMPTY_HINT,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LocalAppColors.current.muted,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    // Кнопка действия прямо в пустом состоянии: без неё юзер
+                    // видит «здесь пусто» и не понимает, куда тыкать — а куда,
+                    // если на вкладке нет другой кнопки. Явное «Добавить»
+                    // ведёт на выбор группы, преподавателя или аудитории.
+                    Button(
+                        onClick = onAdd,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MIET_BLUE),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Добавить в избранное", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            } else {
+                favs.forEachIndexed { index, entry ->
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(animationSpec = tween(300, delayMillis = index * 60)) +
+                            slideInVertically(animationSpec = tween(300, delayMillis = index * 60)) { it / 3 },
+                    ) {
+                        FavEntryCard(entry) { onOpenFavorite(entry.role, entry.value) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
         }
     }
 }

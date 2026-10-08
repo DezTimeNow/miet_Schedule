@@ -194,7 +194,7 @@ fun NextLessonCard(
                 }
                 Text(
                     favTitle(row.entry),
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = LocalAppColors.current.muted,
                     modifier = Modifier.padding(top = 4.dp, bottom = 1.dp),
@@ -290,7 +290,7 @@ private fun FavLessonLine(
                 if (details.isNotEmpty()) {
                     Text(
                         details,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = LocalAppColors.current.muted,
                         maxLines = 2,
                     )

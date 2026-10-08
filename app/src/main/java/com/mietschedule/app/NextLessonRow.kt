@@ -145,7 +145,7 @@ private fun LessonLine(hit: NextLessonLogic.Hit, going: Boolean, now: Long) {
                 if (details.isNotEmpty()) {
                     Text(
                         details,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = LocalAppColors.current.muted,
                         maxLines = 1,
                     )

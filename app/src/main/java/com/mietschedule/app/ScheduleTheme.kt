@@ -2,6 +2,7 @@ package com.mietschedule.app
 
 import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -9,6 +10,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
 
 /**
  * Режим темы: 0 — как в системе, 1 — светлая, 2 — тёмная.
@@ -96,6 +103,47 @@ class AppColors(
 
 val LocalAppColors = staticCompositionLocalOf { AppColors.Light }
 
+/**
+ * Типографика приложения.
+ *
+ * Одна шкала вместо захардкоженных `fontSize = N.sp` в каждом экране:
+ * размер текста теперь свойство темы, а не случайное число в разметке.
+ * Минимум подписи — 12sp: размер 11, которым были подписаны чипы пар и
+ * даты, Material3 считает нижней границей читаемости.
+ */
+private val MietTypography = Typography(
+    // Заголовок экрана в шапке — самый крупный текст.
+    titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
+    // Подзаголовок под названием экрана (счётчик, роль, дата).
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    // Заголовок секции («Избранное:», «Ближайшие пары»).
+    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    // Основной текст: название пары, имя преподавателя, аудитория.
+    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
+    // Текст по умолчанию: подписи, значения, описания.
+    bodyMedium = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
+    // Мелкие подписи: счётчики, время, второстепенное.
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
+    // Надписи на кнопках и чипах.
+    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
+    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
+)
+
+/**
+ * Форма: более скруглённые углы вместо дефолтных Material3.
+ *
+ * 2.5D — это мягкость и глубина. Скругление 16-20dp на карточках и
+ * кнопках читается объёмнее, чем резкие 4-8dp по умолчанию: угол
+ * ловит свет, и поверхность выглядит приподнятой.
+ */
+private val MietShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(28.dp),
+)
+
 private val LightScheme = lightColorScheme(
     primary = ScheduleColorScheme.primary,
     onPrimary = ScheduleColorScheme.onPrimary,
@@ -151,7 +199,12 @@ fun ScheduleTheme(
     val appColors = if (dark) AppColors.Dark else AppColors.Light
 
     CompositionLocalProvider(LocalAppColors provides appColors) {
-        MaterialTheme(colorScheme = colors, content = content)
+        MaterialTheme(
+            colorScheme = colors,
+            typography = MietTypography,
+            shapes = MietShapes,
+            content = content,
+        )
     }
 }
 
