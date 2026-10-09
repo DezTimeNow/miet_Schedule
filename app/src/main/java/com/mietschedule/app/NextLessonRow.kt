@@ -1,5 +1,7 @@
 package com.mietschedule.app
 
+import com.mietschedule.app.BuildConfig
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,11 +55,21 @@ fun NextLessonRow(
 ) {
     // Тик раз в минуту: «через 12 минут» устаревает быстро, а перерисовывать
     // весь список пар из-за секунд незачем.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    //
+    // SCREENSHOT_NOW_MS: отладочный сдвиг времени для скриншотов (см.
+    // NextLessonCard). В debug задаёт фиксированное «сейчас», в release
+    // флаг отсутствует и используется системное время.
+    var now by remember {
+        mutableLongStateOf(
+            if (BuildConfig.SCREENSHOT_NOW_MS > 0L) BuildConfig.SCREENSHOT_NOW_MS
+            else System.currentTimeMillis()
+        )
+    }
     LaunchedEffect(Unit) {
         while (true) {
             delay(60_000)
-            now = System.currentTimeMillis()
+            now = if (BuildConfig.SCREENSHOT_NOW_MS > 0L) BuildConfig.SCREENSHOT_NOW_MS
+            else System.currentTimeMillis()
         }
     }
 

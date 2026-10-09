@@ -1,5 +1,7 @@
 package com.mietschedule.app
 
+import com.mietschedule.app.BuildConfig
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -141,11 +143,21 @@ fun NextLessonCard(
 
     // Тик раз в минуту: «через 12 минут» устаревает быстро, а перерисовывать
     // список пар из-за секунд незачем.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    //
+    // SCREENSHOT_NOW_MS: отладочный сдвиг времени для скриншотов. В debug-
+    // сборке (через BuildConfig) задаёт фиксированный «сейчас», чтобы снять
+    // экран с идущей парой и остатком времени. В release не активен.
+    var now by remember {
+        mutableLongStateOf(
+            if (BuildConfig.SCREENSHOT_NOW_MS > 0L) BuildConfig.SCREENSHOT_NOW_MS
+            else System.currentTimeMillis()
+        )
+    }
     LaunchedEffect(Unit) {
         while (true) {
             delay(60_000)
-            now = System.currentTimeMillis()
+            now = if (BuildConfig.SCREENSHOT_NOW_MS > 0L) BuildConfig.SCREENSHOT_NOW_MS
+            else System.currentTimeMillis()
         }
     }
 
