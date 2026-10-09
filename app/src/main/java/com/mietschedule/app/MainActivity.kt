@@ -133,7 +133,6 @@ internal fun backTargetFor(
         Screen.SETTINGS -> Screen.HOME
         Screen.ABOUT -> Screen.HOME
         Screen.REPORT -> Screen.ABOUT
-        Screen.CHIP_GAME -> Screen.HOME
         // Избранное — вкладка нижней навигации, как и главная: из неё
         // «Назад» ведёт на главную, а не по истории переходов. Так же, как
         // настроек: вкладки равноправны, назад возвращает на главную.
@@ -151,18 +150,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Аналитика и счётчик установок уходят в фоновый поток.
+        // Аналитика уходит в фоновый поток.
         //
         // AppMetrica.activate на главном потоке растягивал старт до 5 секунд:
         // SDK проверяет и загружает классы, и окно не получало фокус —
         // система фиксировала ANR «Waited 5021ms for FocusEvent». Это
         // повторялось на каждом запуске, а не как случайность. Отдельный
-        // поток снимает задержку целиком; обе функции гасят свои ошибки
-        // внутри и на работу приложения не влияют.
+        // поток снимает задержку целиком; функция гасит свои ошибки
+        // внутри и на работу приложения не влияет.
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 Analytics.start(this@MainActivity)
-                InstallCounter.reportRun(this@MainActivity, BuildConfig.VERSION_CODE)
             }
         }
 
@@ -292,7 +290,7 @@ internal enum class Screen {
      * Смешав их в один экран, пришлось бы гадать, куда ведёт «Назад» с главной.
      */
     HOME,
-    PICK_ROLE, PICK_ENTITY, SCHEDULE, SETTINGS, ABOUT, REPORT, CHIP_GAME,
+    PICK_ROLE, PICK_ENTITY, SCHEDULE, SETTINGS, ABOUT, REPORT,
     /**
      * ИЗБРАННОЕ: список отмеченных звёздами групп, преподавателей и
      * аудиторий. Отдельный экран, а не блок на главной, потому что теперь
@@ -716,7 +714,6 @@ fun AppRoot(
             refreshNote = refreshNote,
             onAbout = { goTo(Screen.ABOUT) },
             onSettings = { goTo(Screen.SETTINGS) },
-            onOpenChipGame = { goTo(Screen.CHIP_GAME) },
             onOpenFavorites = { goTo(Screen.FAVORITES) },
             refreshing = refreshing,
             showFavorites = showFavoritesOnHome,
@@ -858,12 +855,6 @@ fun AppRoot(
                 }
             },
         )
-
-        // ───────── мини-игра «Тапни микросхему» ─────────
-        //
-        // Отдельный экран без параметров: он не зависит от выбранной роли
-        // или группы, а результат уходит на скрипт таблицы лидеров.
-        Screen.CHIP_GAME -> TapChipScreen(onBack = { screen = backTargetFor(Screen.CHIP_GAME, selection != null, screenOrigin) })
 
         // ───────── вкладка «Избранное» ─────────
         Screen.FAVORITES -> FavoritesScreen(

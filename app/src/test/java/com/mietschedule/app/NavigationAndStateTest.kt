@@ -127,7 +127,7 @@ class NavigationAndStateTest {
         // Правило единое, а не частное для расписания: любой экран, у которого
         // есть входы из нескольких мест, возвращает туда, откуда вошли.
         for (screen in listOf(
-            Screen.ABOUT, Screen.SETTINGS, Screen.CHIP_GAME, Screen.REPORT,
+            Screen.ABOUT, Screen.SETTINGS, Screen.REPORT,
         )) {
             for (origin in listOf(Screen.HOME, Screen.PICK_ROLE, Screen.PICK_ENTITY)) {
                 if (origin == screen) continue
@@ -153,7 +153,6 @@ class NavigationAndStateTest {
         assertEquals(Screen.HOME, backTargetFor(Screen.ABOUT, hasSelection = false))
         assertEquals(Screen.HOME, backTargetFor(Screen.ABOUT, hasSelection = true))
         assertEquals(Screen.HOME, backTargetFor(Screen.SETTINGS, hasSelection = true))
-        assertEquals(Screen.HOME, backTargetFor(Screen.CHIP_GAME, hasSelection = true))
     }
 
     @Test

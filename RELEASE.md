@@ -127,8 +127,7 @@ Android сверяет сертификат при установке. Из эт
 
 ## Серверная часть
 
-Часть функций полагается на Google Apps Script, исходники которого лежат в
-`game_top.gs`: таблица рекордов мини-игры и счётчик установок.
+Часть функций полагается на Google Apps Script: счётчик установок.
 
 **Развернуть его может только владелец скрипта.** Без доступа к аккаунту, под
 которым он создан, скрипт не обновить, и правки останутся незадействованными.
@@ -158,7 +157,6 @@ app/src/main/java/com/mietschedule/app/   экраны, логика, сеть, 
   MietApi.kt, ApiPaths.kt, Models.kt        сеть и модели
   UpdateChecker.kt, UpdateDialog.kt         обновления
   ReminderScheduler.kt, RefreshWorker.kt    уведомления и фон
-game_top.gs                                серверная часть Apps Script
 docs/                                      скриншоты для README
 ```
 

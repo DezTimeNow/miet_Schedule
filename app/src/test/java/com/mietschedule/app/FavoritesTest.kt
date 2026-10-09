@@ -269,7 +269,7 @@ class FavoritesTest {
         // правилу экрана (по наличию сохранённой группы), а не по факту
         // входа. Именно это ломало переход из главного меню.
         val s = stripComments(src("MainActivity.kt"))
-        val direct = Regex("""screen\s*=\s*Screen\.(ABOUT|SETTINGS|FAVORITES|CHIP_GAME|REPORT)""")
+        val direct = Regex("""screen\s*=\s*Screen\.(ABOUT|SETTINGS|FAVORITES|REPORT)""")
             .findAll(s)
             .map { it.value }
             .toList()

@@ -174,15 +174,18 @@ class HomeLayoutTest {
         val blockIdx = body.indexOf("NextLessonCard(")
         val listIdx = body.indexOf("FAV_LIST_TITLE")
         val addIdx = body.indexOf("onClick = onAdd")
-        val gameIdx = body.indexOf("onClick = { onOpenChipGame?.invoke() }")
         assertTrue("Не найден блок «сейчас и дальше»", blockIdx > 0)
         assertTrue("Не найден список избранного", listIdx > 0)
         assertTrue("Не найдена кнопка добавления", addIdx > 0)
-        assertTrue("Не найдена ссылка «Мини-игра»", gameIdx > 0)
         assertTrue(
-            "Порядок должен быть: блок, список, добавление, мини-игра. " +
-                "На деле: блок=$blockIdx, список=$listIdx, добавление=$addIdx, игра=$gameIdx",
-            blockIdx < listIdx && listIdx < addIdx && addIdx < gameIdx,
+            "Порядок должен быть: блок, список, добавление. " +
+                "На деле: блок=$blockIdx, список=$listIdx, добавление=$addIdx",
+            blockIdx < listIdx && listIdx < addIdx,
+        )
+        // Мини-игры на главной нет — удалена вместе с экраном.
+        assertFalse(
+            "Ссылки на мини-игру не должно быть на главной",
+            home.contains("onOpenChipGame"),
         )
     }
 

@@ -35,9 +35,6 @@ object Analytics {
     /** Запуск приложения. Считается SDK сам; нужен для проверки подключения. */
     const val EVENT_LAUNCH = "app_launch"
 
-    /** Одно нажатие по микросхеме. */
-    const val EVENT_TAP = "game_tap"
-
     /** Открытие экрана расписания. */
     const val EVENT_SCHEDULE_OPEN = "schedule_open"
 
@@ -94,16 +91,5 @@ object Analytics {
         } catch (t: Throwable) {
             Log.w(TAG, "Событие $event не отправлено: ${t.message}")
         }
-    }
-
-    /**
-     * Текущий счёт игрока.
-     *
-     * Отправка не на каждый тап: событий накапливается столько же, сколько
-     * нажатий, а счёт меняется медленно. Одного значения за игру достаточно,
-     * чтобы увидеть разброс результатов.
-     */
-    fun reportScore(score: Int) {
-        event(EVENT_TAP, "score", score)
     }
 }

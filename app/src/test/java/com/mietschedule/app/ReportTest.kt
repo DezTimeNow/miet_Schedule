@@ -88,9 +88,6 @@ class ReportTest {
             "REPORT не возвращает в ABOUT",
             s.contains("Screen.REPORT -> Screen.ABOUT"),
         )
-        // Константы в enum перечислены не подряд (CHIP_GAME добавлен после
-        // REPORT), поэтому проверка идёт по вхождению в блок объявления,
-        // а не по точной строке.
         val enumBody = s.substringAfter("enum class Screen {").substringBefore("}")
         assertTrue("REPORT нет в enum Screen", enumBody.contains("REPORT"))
     }
