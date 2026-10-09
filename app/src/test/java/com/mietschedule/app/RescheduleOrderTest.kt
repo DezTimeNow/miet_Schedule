@@ -1,6 +1,7 @@
 package com.mietschedule.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -56,7 +57,7 @@ class RescheduleOrderTest {
     @Test
     fun `отмена читает плановые коды до их перезаписи`() {
         val body = rescheduleBody()
-        val cancelIdx = body.indexOf("cancelAll(ctx)\n\n        val row")
+        val cancelIdx = body.indexOf("cancelAll(ctx)\n\n        val todayDow")
         val rememberIdx = body.lastIndexOf("rememberPlanned(ctx, plannedIds)")
         assertTrue("Не найдена прочистка перед постановкой", cancelIdx > 0)
         assertTrue("Не найден rememberPlanned", rememberIdx > 0)
@@ -109,7 +110,7 @@ class RescheduleOrderTest {
     }
 
     /**
-     * Пересчёт напоминаний при запуске приложения.
+     * Напоминания пересчитываются при запуске приложения.
      *
      * Будильники не переживают ОБНОВЛЕНИЕ приложения: Android снимает
      * PendingIntent'ы при установке новой версии. Пересчёт висел только на
@@ -126,6 +127,52 @@ class RescheduleOrderTest {
         assertTrue(
             "onCreate обязан пересчитывать напоминания, иначе после обновления пушей нет",
             on.contains("ReminderScheduler.reschedule("),
+        )
+    }
+
+    /**
+     * Дата дня горизонта берётся от СЕГОДНЯ, а не из текущей недели.
+     *
+     * Баг: WeekType.dateOfWeekDay(0, dow) даёт «понедельник текущей недели +
+     * dow». При dayOffset>=3 в пятницу dow переполняется в начало недели, а
+     * дата откатывается в ПРОШЛОЕ — будильник уходил в прошлое и молча
+     * отсеивался. С пятницы по воскресенье напоминаний не было ВООБЩЕ,
+     * что выглядело как «через раз»: пн-чт работали, пт-вс молчали.
+     */
+    @Test
+    fun `дата дня горизонта считается от сегодня, а не от понедельника недели`() {
+        val body = rescheduleBody()
+        assertFalse(
+            "Дата дня НЕ должна браться из dateOfWeekDay(0, dow): " +
+                "на dayOffset>=3 в пятницу она уходит в прошлое и будильник " +
+                "молча теряется",
+            body.contains("dateOfWeekDay(0, dow)"),
+        )
+        assertTrue(
+            "Дата дня считается от сегодня плюс dayOffset — ровно тот день, " +
+                "который имеется в виду, независимо от границ недели",
+            body.contains("add(Calendar.DAY_OF_MONTH, dayOffset)"),
+        )
+    }
+
+    /**
+     * Тип учебной недели считается ДЛЯ ДАТЫ ДНЯ, а не из dayOffset.
+     *
+     * Баг: floorMod(row + dayOffset / 7, 4) на dayOffset=3 в пятницу даёт
+     * +0, хотя день уже в СЛЕДУЮЩЕЙ учебной неделе с другим типом.
+     * Настоящая пара отсеивалась по типу недели.
+     */
+    @Test
+    fun `тип недели считается для даты дня, а не из смещения`() {
+        val body = rescheduleBody()
+        assertFalse(
+            "Тип недели НЕ должен считаться как floorMod(row + dayOffset / 7, 4): " +
+                "на переходе через неделю тип другой",
+            body.contains("floorMod(row + dayOffset / 7, 4)"),
+        )
+        assertTrue(
+            "Тип недели считается через typeFor для конкретной даты дня",
+            body.contains("WeekType.typeFor("),
         )
     }
 }

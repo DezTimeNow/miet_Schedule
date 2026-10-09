@@ -221,7 +221,6 @@ object ReminderScheduler {
         // сначала снять всё по сохранённому списку, потом ставить заново.
         cancelAll(ctx)
 
-        val row = WeekType.currentRowIndex()
         val todayDow = (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7
         // Интервал берём из настроек пользователя, а не из константы:
         // вариантов несколько, и значение меняется без переустановки.
@@ -254,17 +253,48 @@ object ReminderScheduler {
                 // Сегодняшний индекс + смещение дней: так получаем календарный
                 // день недели для каждого дня горизонта.
                 val dow = (todayDow + dayOffset) % 7
-                val date = WeekType.dateOfWeekDay(0, dow) ?: continue
+                // ДАТУ БЕРЁМ ОТ СЕГОДНЯ, А НЕ ИЗ ТЕКУЩЕЙ НЕДЕЛИ.
+                //
+                // Раньше стоял вызов dateOfWeekDay с нулевым сдвигом —
+                // «понедельник текущей недели + dow». Для dayOffset
+                // 0..(6 - todayDow) это верно, но дальше dow переполняется в
+                // начало недели, а дата откатывается в ПРОШЛОЕ: сегодня
+                // пятница, dayOffset 3 — это понедельник СЛЕДУЮЩЕЙ недели, а
+                // код давал понедельник текущей, то есть позавчера. Будильник
+                // уходил в прошлое, отсекался по «startAt <= now» — и с
+                // пятницы до воскресенья напоминаний не было ВООБЩЕ. Выглядело
+                // как «через раз»: пн-чт работали, пт-вс молчали.
+                //
+                // today + dayOffset — ровно тот календарный день, который
+                // имеется в виду, независимо от границ недели.
+                val date = Calendar.getInstance().apply {
+                    timeInMillis = System.currentTimeMillis()
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                    add(Calendar.DAY_OF_MONTH, dayOffset)
+                }
 
                 for (l in lessons) {
                     // Day в ответе 1..7, где 1 = понедельник, наш индекс 0..6.
                     val lessonDow = (l.day ?: -1) - 1
                     if (lessonDow != dow) continue
-                    // DayNumber = конкретная учебная неделя (0..3). Через
-                    // HORIZON_DAYS попадают разные календарные недели, а тип
-                    // недели для них считается так же, как для текущей.
+                    // DayNumber = конкретная учебная неделя (0..3). Тип недели
+                    // считаем ДЛЯ ДАТЫ ЭТОГО ДНЯ, а не из dayOffset.
+                    //
+                    // Раньше стоял floorMod от суммы текущего типа и числа
+                    // полных недель в горизонте. При dayOffset=3 в пятницу это
+                    // даёт +0, хотя день уже в СЛЕДУЮЩЕЙ календарной (и
+                    // учебной) неделе — тип другой. Настоящая пара отсеивалась,
+                    // и «через раз» ловили не только по дате, но и по типу
+                    // недели.
+                    //
+                    // typeFor считает от даты до старта семестра — ровно то,
+                    // как экран расписания показывает «числитель/знаменатель».
                     val lessonRow = l.dayNumber ?: 0
-                    if (lessonRow != Math.floorMod(row + dayOffset / 7, 4)) continue
+                    val dayWeekType = WeekType.typeFor(date, WeekType.parseIso(WeekType.SEMESTR_START_ISO) ?: continue)
+                    if (lessonRow != dayWeekType) continue
 
                     val startAt = dateAt(date, l.time?.timeFrom) ?: continue
                     val now = System.currentTimeMillis()
