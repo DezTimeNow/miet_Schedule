@@ -19,7 +19,7 @@
 <br>
 <br>
 
-<details>
+<details open>
 <summary><b>Как установить?</b></summary>
 
 1. Скачайте APK по кнопке выше.
