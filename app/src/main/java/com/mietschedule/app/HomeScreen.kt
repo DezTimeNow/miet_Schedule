@@ -144,6 +144,15 @@ fun HomeScreen(
     onOpenChipGame: (() -> Unit)? = null,
     /** Открыть вкладку «Избранное» нижней навигации. */
     onOpenFavorites: () -> Unit = {},
+    /**
+     * Показывать ли список избранного на главной.
+     *
+     * Выключается переключателем в «Настройках». Когда список скрыт, главная
+     * отвечает только на вопрос «что сейчас»: блок «Ближайшие пары» остаётся.
+     * Добавление в избранное при этом доступно на вкладке «Избранное», поэтому
+     * кнопка «Добавить» прячется вместе со списком.
+     */
+    showFavorites: Boolean = true,
 ) {
     // Снимок избранного читается на каждом входе на главную. remember без
     // ключа здесь безопасен: при переходе на другой экран главная выходит из
@@ -206,69 +215,75 @@ fun HomeScreen(
 
             // ───── СПИСОК ИЗБРАННОГО ─────
             //
-            // Ушёл на отдельный экран-вкладку «Избранное» (см. [FavoritesScreen]).
-            // Раньше он висел здесь, но с появлением вкладки «Избранное» в
-            // нижней навигации один и тот же список в двух местах — это
-            // дублирование: пользователь путается, какой из них главный.
-            // Главная теперь отвечает на два вопроса: «что сейчас» (блок
-            // «сейчас и дальше») и «куда добавить» (кнопка «Добавить»).
-            // Сам список избранного живёт на своей вкладке.
-            if (favs.isEmpty()) {
-                // Пустое состояние с иконкой: на главной оно подсказывает,
-                // что делать дальше. Звезда-контур прямо говорит, какое
-                // действие наполнит избранное.
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(
-                        Icons.Outlined.StarBorder,
-                        contentDescription = null,
-                        tint = LocalAppColors.current.starInactive,
-                        modifier = Modifier.size(56.dp),
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        FAV_EMPTY_TITLE,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = LocalAppColors.current.dim,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        FAV_EMPTY_HINT,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LocalAppColors.current.muted,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            } else {
-                Text(
-                    FAV_LIST_TITLE,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = LocalAppColors.current.muted,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
-                )
-                favs.take(3).forEachIndexed { index, entry ->
-                    AnimatedVisibility(
-                        visible = true,
-                        enter = fadeIn(animationSpec = tween(300, delayMillis = index * 60)) +
-                            slideInVertically(animationSpec = tween(300, delayMillis = index * 60)) { it / 3 },
+            // Блок целиком показывается только при включённой настройке
+            // «Показывать избранное на главной». Вместе со списком прячется и
+            // кнопка «Добавить»: добавлять можно на вкладке «Избранное», а
+            // главная без списка отвечает только на вопрос «что сейчас».
+            if (showFavorites) {
+                //
+                // Ушёл на отдельный экран-вкладку «Избранное» (см. [FavoritesScreen]).
+                // Раньше он висел здесь, но с появлением вкладки «Избранное» в
+                // нижней навигации один и тот же список в двух местах — это
+                // дублирование: пользователь путается, какой из них главный.
+                // Главная теперь отвечает на два вопроса: «что сейчас» (блок
+                // «сейчас и дальше») и «куда добавить» (кнопка «Добавить»).
+                // Сам список избранного живёт на своей вкладке.
+                if (favs.isEmpty()) {
+                    // Пустое состояние с иконкой: на главной оно подсказывает,
+                    // что делать дальше. Звезда-контур прямо говорит, какое
+                    // действие наполнит избранное.
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        FavEntryCard(entry) { onOpenFavorite(entry.role, entry.value) }
+                        Icon(
+                            Icons.Outlined.StarBorder,
+                            contentDescription = null,
+                            tint = LocalAppColors.current.starInactive,
+                            modifier = Modifier.size(56.dp),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            FAV_EMPTY_TITLE,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = LocalAppColors.current.dim,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            FAV_EMPTY_HINT,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LocalAppColors.current.muted,
+                            textAlign = TextAlign.Center,
+                        )
                     }
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (favs.size > 3) {
+                } else {
                     Text(
-                        "Ещё ${favs.size - 3} — во вкладке «Избранное»",
-                        style = MaterialTheme.typography.bodySmall,
+                        FAV_LIST_TITLE,
+                        style = MaterialTheme.typography.titleSmall,
                         color = LocalAppColors.current.muted,
-                        modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                     )
-                }
+                    favs.take(3).forEachIndexed { index, entry ->
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn(animationSpec = tween(300, delayMillis = index * 60)) +
+                                slideInVertically(animationSpec = tween(300, delayMillis = index * 60)) { it / 3 },
+                        ) {
+                            FavEntryCard(entry) { onOpenFavorite(entry.role, entry.value) }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    if (favs.size > 3) {
+                        Text(
+                            "Ещё ${favs.size - 3} — во вкладке «Избранное»",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LocalAppColors.current.muted,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                        )
+                    }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -284,6 +299,7 @@ fun HomeScreen(
                 title = "Добавить",
                 onClick = onAdd,
             )
+            }
 
             Spacer(Modifier.height(18.dp))
 

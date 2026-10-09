@@ -170,6 +170,12 @@ class MainActivity : ComponentActivity() {
         // «О программе», а тот лежит внутри AppRoot. Передаём лямбду.
         var themeModeState by mutableStateOf(loadThemeMode(this))
 
+        // Показывать ли список избранного на главной. Живёт здесь, а не в
+        // HomeScreen: настройка меняется на экране «Настройки», и главная
+        // обязана отразить изменение сразу, без перезапуска приложения.
+        // Значение по умолчанию — показывать.
+        var showFavsOnHome by mutableStateOf(HomePrefs.showFavorites(this))
+
         // Фоновая актуализация раз в 6 часов.
         //
         // ВАЖНО: schedule() трогает WorkManager, а его первая инициализация
@@ -211,6 +217,11 @@ class MainActivity : ComponentActivity() {
                         onThemeChange = { mode ->
                             saveThemeMode(this@MainActivity, mode)
                             themeModeState = mode
+                        },
+                        showFavoritesOnHome = showFavsOnHome,
+                        onShowFavoritesChange = { on ->
+                            HomePrefs.setShowFavorites(this@MainActivity, on)
+                            showFavsOnHome = on
                         },
                     )
                 // Проверка новой версии при запуске. Идёт в фоне: открытие
@@ -309,6 +320,15 @@ fun AppRoot(
     requestedRole: Role? = null,
     onUpdateFound: (UpdateInfo) -> Unit = {},
     onThemeChange: (Int) -> Unit = {},
+    /**
+     * Показывать ли список избранного на главной.
+     *
+     * Состояние держится здесь, а не в HomeScreen: настройка меняется на
+     * экране «Настройки», и главная обязана показать изменение сразу.
+     */
+    showFavoritesOnHome: Boolean = true,
+    /** Изменилась настройка показа избранного на главной. */
+    onShowFavoritesChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val api = remember { MietApi(context) }
@@ -699,6 +719,7 @@ fun AppRoot(
             onOpenChipGame = { goTo(Screen.CHIP_GAME) },
             onOpenFavorites = { goTo(Screen.FAVORITES) },
             refreshing = refreshing,
+            showFavorites = showFavoritesOnHome,
         )
 
         // ДОБАВЛЕНИЕ. Выбор группы, преподавателя и аудитории вызывается
@@ -791,6 +812,8 @@ fun AppRoot(
             onThemeChange = onThemeChange,
             onAbout = { goTo(Screen.ABOUT) },
             refreshing = refreshing,
+            showFavorites = showFavoritesOnHome,
+            onShowFavoritesChange = onShowFavoritesChange,
         )
 
         Screen.ABOUT -> AboutScreen(
