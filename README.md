@@ -31,7 +31,7 @@
 </td>
 <td width="38%" valign="middle" align="center">
 
-<img src="docs/01-main.jpg" width="270" alt="Главный экран">
+<img src="docs/01-main-v2.jpg" width="270" alt="Главный экран">
 
 </td>
 </tr>
