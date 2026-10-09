@@ -116,7 +116,7 @@ private val MietTypography = Typography(
     titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
     // Подзаголовок под названием экрана (счётчик, роль, дата).
     titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    // Заголовок секции («Избранное:», «Ближайшие пары»).
+    // Заголовок секции («Избранное:», «Пары на сегодня»).
     titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
     // Основной текст: название пары, имя преподавателя, аудитория.
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),

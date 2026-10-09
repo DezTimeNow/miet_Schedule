@@ -40,7 +40,7 @@ import androidx.compose.material3.CircularProgressIndicator
 
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 
 import androidx.compose.runtime.mutableStateOf
 
@@ -207,7 +207,7 @@ fun AboutScreen(
                 shape = RoundedCornerShape(12.dp),
             ) {
                 Icon(
-                    Icons.Filled.Send,
+                    Icons.AutoMirrored.Filled.Send,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
@@ -235,14 +235,16 @@ fun AboutScreen(
             // когда хотят почитать о приложении. Доступ — с главного экрана.
 
             // Описание переписано под интерфейс 0.65–0.66 по требованию
-            // владельца: блок на главной теперь называется «Ближайшие пары»,
-            // избранное живёт списком кнопок, а добавление — кнопкой
-            // «Добавить». Прежний текст описывал экраны, которых уже нет.
+            // владельца, а в 0.78 поправлено под список ВСЕГО дня: блок больше
+            // не ограничивается ближайшей парой, и текст обязан говорить то же,
+            // что видно на экране.
             AboutBlock(
-                "Ближайшие пары",
-                "На главной видно, что идёт сейчас и что дальше: предмет, " +
-                "аудитория, преподаватель и через сколько начнётся. " +
-                "Если пара идёт, так и написано. Отсчёт обновляется сам."
+                "Пары на сегодня",
+                "На главной — весь день по порядку: предмет, аудитория, " +
+                "преподаватель и время. Прошедшие пары остаются видимыми, " +
+                "но приглушёнными; идущая подсвечена и показывает, сколько " +
+                "осталось; у будущих — сколько ждать до начала. Когда день " +
+                "закончится, появится ближайший день с занятиями."
             )
 
             AboutBlock(

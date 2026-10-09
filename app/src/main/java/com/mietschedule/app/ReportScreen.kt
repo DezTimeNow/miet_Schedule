@@ -13,7 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -198,7 +198,7 @@ fun ReportScreen(
                         )
                     } else {
                         Icon(
-                            Icons.Filled.Send,
+                            Icons.AutoMirrored.Filled.Send,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp),
                         )
