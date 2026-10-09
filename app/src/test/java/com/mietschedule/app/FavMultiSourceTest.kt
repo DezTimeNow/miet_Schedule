@@ -47,30 +47,29 @@ class FavMultiSourceTest {
     @Test
     fun `блок показывает строки по каждому избранному`() {
         val code = stripComments(src("NextLessonCard.kt"))
-        // Разбор идёт по каждому элементу списка избранного, а currentAndNext
-        // вызывается внутри map по разным группам.
+        // Разбор идёт по каждому элементу списка избранного: список пар дня
+        // собирается внутри map по разным группам.
         assertTrue(
-            "Нужен map/mapNotNull по избранному, а не один currentAndNext " +
-                "на весь список",
+            "Нужен map/mapNotNull по избранному, а не один разбор на весь список",
             Regex("""groups\.mapNotNull\s*\{""").containsMatchIn(code),
         )
         assertTrue(
-            "currentAndNext должен вызываться на парах конкретного избранного",
-            Regex("""currentAndNext\(\s*lessons = g\.lessons""").containsMatchIn(code),
+            "пары дня должны считаться по парам конкретного избранного",
+            Regex("""dayLessons\(g\.lessons, g\.times, now""").containsMatchIn(code),
         )
     }
 
     @Test
     fun `избранное без пар не попадает в блок`() {
         val code = stripComments(src("NextLessonCard.kt"))
-        // Решение владельца: строка «пар нет» не показывается — блок отвечает
-        // на вопрос «что сейчас», и такая строка на него не отвечает.
+        // С блоком всего дня правило стало шире: избранное показывается, если
+        // у него есть пары сегодня или ближайший день с занятиями. Если нет ни
+        // того, ни другого — строки нет, иначе в блоке висела бы пустая группа.
         assertTrue(
-            "Группа без идущей и следующей пары должна отбрасываться: " +
-                "решение владельца — не показывать строку «пар нет»",
-            Regex(
-                """mapNotNull[\s\S]{0,400}?going == null && upcoming == null\)\s*null""",
-            ).containsMatchIn(code),
+            "Избранное без пар сегодня и без следующего дня с занятиями " +
+                "обязано отбрасываться",
+            Regex("""nextDayWithLessons\(g, now\) \?: return@mapNotNull null""")
+                .containsMatchIn(code),
         )
     }
 

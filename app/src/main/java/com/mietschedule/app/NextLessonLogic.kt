@@ -149,40 +149,12 @@ object NextLessonLogic {
     ): Pair<Hit?, Hit?> {
         if (lessons.isEmpty()) return null to null
 
-        // Разметка по неделям есть? Если её нет вовсе (старый кэш, ответ без
-        // DayNumber), фильтровать нечем — ведём себя как раньше.
-        val hasWeekRows = lessons.any { it.dayNumber != null }
         val semestrStart = WeekType.parseIso(semestrStartIso)
+        val hasWeekRows = lessons.any { it.dayNumber != null }
 
         val hits = mutableListOf<Hit>()
-
         for (dayIn in 0..withinDays) {
-            // Прямо от now: так дата не зависит от учебной недели и всегда
-            // означает именно тот день, который человек видит в календаре.
-            val date = Calendar.getInstance().apply {
-                timeInMillis = now
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-                add(Calendar.DAY_OF_MONTH, dayIn)
-            }
-            val weekDay = dayIndexFromCalendar(date.get(Calendar.DAY_OF_WEEK))
-            // Строка недели — ДЛЯ ЭТОГО ДНЯ, а не одна на весь блок: окно в
-            // семь дней переходит в следующую учебную неделю, и её пары лежат
-            // в другой строке DayNumber. Одна общая строка отсекла бы пары
-            // конца окна.
-            val weekRow = semestrStart?.let { WeekType.typeFor(date, it) }
-
-            for (l in lessons) {
-                if ((l.day ?: 1) - 1 != weekDay) continue
-                if (hasWeekRows && weekRow != null && l.dayNumber != weekRow) continue
-                val start = startMillis(l, times, date)
-                // Пара без времени таблицы пропускаем: показывать её нечем.
-                // Номер пары без часов в строке «сейчас» вводит в заблуждение.
-                if (start == null) continue
-                hits += Hit(l, start, endMillis(l, times, date))
-            }
+            hits += hitsOfDay(lessons, times, dateOf(now, dayIn), semestrStart, hasWeekRows)
         }
 
         // Идущая: началась раньше «сейчас» и ещё не кончилась.
@@ -193,6 +165,107 @@ object NextLessonLogic {
         val upcoming = hits.filter { (it.start ?: 0L) > now }.minByOrNull { it.start ?: 0L }
 
         return going to upcoming
+    }
+
+    /** Полночь дня со сдвигом [dayOffset] от момента [now]. */
+    private fun dateOf(now: Long, dayOffset: Int): Calendar =
+        Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            add(Calendar.DAY_OF_MONTH, dayOffset)
+        }
+
+    /**
+     * Пары одного календарного дня.
+     *
+     * ЕДИНСТВЕННОЕ место, где решается, какие пары попадают в день: день
+     * недели и строка УЧЕБНОЙ недели. Строка считается для конкретного дня, а
+     * не одна на всё окно: окно в семь дней переходит в следующую учебную
+     * неделю, и её пары лежат в другой строке `DayNumber`.
+     */
+    private fun hitsOfDay(
+        lessons: List<Lesson>,
+        times: List<PairTime>,
+        date: Calendar,
+        semestrStart: Calendar?,
+        hasWeekRows: Boolean,
+    ): List<Hit> {
+        val weekDay = dayIndexFromCalendar(date.get(Calendar.DAY_OF_WEEK))
+        val weekRow = semestrStart?.let { WeekType.typeFor(date, it) }
+        val out = mutableListOf<Hit>()
+        for (l in lessons) {
+            if ((l.day ?: 1) - 1 != weekDay) continue
+            if (hasWeekRows && weekRow != null && l.dayNumber != weekRow) continue
+            val start = startMillis(l, times, date)
+            // Пара без времени таблицы пропускается: показывать её нечем.
+            // Номер пары без часов в строке «сейчас» вводит в заблуждение.
+            if (start == null) continue
+            out += Hit(l, start, endMillis(l, times, date))
+        }
+        return out
+    }
+
+    /** Состояние пары в списке дня. */
+    enum class LessonState {
+        /** Пара закончилась. */
+        PAST,
+
+        /** Пара идёт прямо сейчас. */
+        GOING,
+
+        /** Пара ещё будет сегодня. */
+        FUTURE,
+    }
+
+    /** Пара дня: когда начинается, когда кончается и что с ней сейчас. */
+    data class DayLesson(
+        val lesson: Lesson,
+        val start: Long,
+        /** Конец пары, если сервер его отдал. У части аудиторий корпуса 8 его нет. */
+        val end: Long?,
+        val state: LessonState,
+    )
+
+    /**
+     * Все пары одного дня по порядку начала.
+     *
+     * Нужно блоку на главной: он показывает день целиком — прошедшие
+     * приглушёнными, идущую подсвеченной с остатком времени, будущие с
+     * отсчётом. До этого блок показывал только идущую и следующую пары, и
+     * человек не видел, сколько у него всего на сегодня.
+     */
+    fun dayLessons(
+        lessons: List<Lesson>,
+        times: List<PairTime>,
+        now: Long,
+        dayOffset: Int = 0,
+        semestrStartIso: String = WeekType.SEMESTR_START_ISO,
+    ): List<DayLesson> {
+        if (lessons.isEmpty()) return emptyList()
+        return hitsOfDay(
+            lessons = lessons,
+            times = times,
+            date = dateOf(now, dayOffset),
+            semestrStart = WeekType.parseIso(semestrStartIso),
+            hasWeekRows = lessons.any { it.dayNumber != null },
+        )
+            .sortedBy { it.start ?: 0L }
+            .mapNotNull { hit ->
+                val start = hit.start ?: return@mapNotNull null
+                // Конец без данных сервера считаем так же, как в isGoing: пара
+                // идёт в пределах 90 минут. Это приближение, поэтому остаток
+                // времени показывается только когда конец известен.
+                val end = hit.end
+                val state = when {
+                    start > now -> LessonState.FUTURE
+                    now < (end ?: (start + 90L * 60 * 1000)) -> LessonState.GOING
+                    else -> LessonState.PAST
+                }
+                DayLesson(hit.lesson, start, end, state)
+            }
     }
 
 

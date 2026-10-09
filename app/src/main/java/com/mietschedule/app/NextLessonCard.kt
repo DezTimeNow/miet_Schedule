@@ -33,6 +33,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -69,6 +72,7 @@ private val BLOCK_PLACEHOLDER_HEIGHT = 96.dp
  */
 internal const val FAV_BLOCK_TITLE = "Ближайшие пары"
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NextLessonCard(
     api: MietApi,
@@ -143,19 +147,46 @@ fun NextLessonCard(
         }
     }
 
-    // По каждому избранному СВОЯ пара строк: идущая и следующая. Общий
-    // currentAndNext по всем сразу возвращал одну самую раннюю пару, и второе
-    // избранное в блоке просто отсутствовало.
+    // По каждому избранному — СВОЙ список пар дня: заголовок группы, ниже все
+    // её пары сегодня. Прошедшие остаются видимыми и приглушёнными, идущая
+    // подсвечена и показывает остаток времени, будущие — отсчёт до начала.
+    // Если день закончился, показываем ближайший день с занятиями.
     val rows = remember(groups, now) {
         groups.mapNotNull { g ->
-            val (going, upcoming) = NextLessonLogic.currentAndNext(
-                lessons = g.lessons, times = g.times, now = now,
-            )
-            if (going == null && upcoming == null) null
-            else FavRows(g.entry, going, upcoming)
+            val today = NextLessonLogic.dayLessons(g.lessons, g.times, now)
+            val live = today.any { it.state != NextLessonLogic.LessonState.PAST }
+            if (live) {
+                FavRows(g.entry, today, null, emptyList())
+            } else {
+                // День кончился или занятий в нём нет: пустая плашка ничего не
+                // сообщает, поэтому показываем, что будет дальше.
+                val next = nextDayWithLessons(g, now) ?: return@mapNotNull null
+                FavRows(g.entry, today, next.first, next.second)
+            }
         }
     }
     if (rows.isEmpty()) return
+
+    // ПОДКРУТКА К ИДУЩЕЙ ПАРЕ.
+    //
+    // Со списком всего дня нужная строка уезжает за пределы экрана: человек
+    // открывает меню, а видит первые пары дня, и идущую приходится искать.
+    // Просим прокрутить к ней один раз — и ещё раз, когда началась следующая
+    // пара. На каждый тик раз в минуту подкрутки нет: иначе список дёргался бы
+    // из-под пальца.
+    val goingRequester = remember { BringIntoViewRequester() }
+    val goingKey = remember(rows) {
+        rows.firstNotNullOfOrNull { row ->
+            row.today.firstOrNull { it.state == NextLessonLogic.LessonState.GOING }
+                ?.let { it.start to (it.lesson.classInfo?.name ?: "") }
+        }
+    }
+    LaunchedEffect(goingKey) {
+        if (goingKey != null) {
+            delay(250)
+            runCatching { goingRequester.bringIntoView() }
+        }
+    }
 
     Card(
         Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -182,9 +213,9 @@ fun NextLessonCard(
                     color = LocalAppColors.current.favStar,
                 )
             }
-            // Группы по избранному: заголовок отмечает, кому принадлежит пара.
+            // Группы по избранному: заголовок отмечает, кому принадлежат пары.
             // Иначе при двух избранных строки выглядели бы как одна лента, и
-            // непонятно, чья это пара.
+            // непонятно, чьи это пары.
             rows.forEachIndexed { index, row ->
                 if (index > 0) {
                     Spacer(Modifier.height(6.dp))
@@ -199,36 +230,82 @@ fun NextLessonCard(
                     color = LocalAppColors.current.muted,
                     modifier = Modifier.padding(top = 4.dp, bottom = 1.dp),
                 )
-                row.going?.let {
-                    FavLessonLine(it, now = now) { onOpen(row.entry.role, row.entry.value) }
+                val hasGoing = row.today.any { it.state == NextLessonLogic.LessonState.GOING }
+                row.today.forEach { item ->
+                    FavDayLine(
+                        item = item,
+                        now = now,
+                        goingRequester = if (
+                            hasGoing && item.state == NextLessonLogic.LessonState.GOING
+                        ) goingRequester else null,
+                    ) { onOpen(row.entry.role, row.entry.value) }
                 }
-                row.upcoming?.let {
-                    FavLessonLine(it, now = now) { onOpen(row.entry.role, row.entry.value) }
+                // День закончился — говорим об этом прямо, а не оставляем
+                // человека гадать, почему список кончился.
+                if (row.today.isNotEmpty() && !hasGoing && row.next.isNotEmpty()) {
+                    Text(
+                        "Пары на сегодня закончились",
+                        fontSize = 12.sp,
+                        color = LocalAppColors.current.muted,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 1.dp),
+                    )
+                }
+                if (row.today.isEmpty() && row.next.isNotEmpty()) {
+                    Text(
+                        "Сегодня пар нет",
+                        fontSize = 12.sp,
+                        color = LocalAppColors.current.muted,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 1.dp),
+                    )
+                }
+                row.nextTitle?.let { title ->
+                    Text(
+                        title,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = LocalAppColors.current.muted,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 1.dp),
+                    )
+                }
+                row.next.forEach { item ->
+                    FavDayLine(item = item, now = now) {
+                        onOpen(row.entry.role, row.entry.value)
+                    }
                 }
             }
         }
     }
 }
 
-/** Строка блока с переходом в расписание. */
+/**
+ * Строка пары дня с переходом в расписание.
+ *
+ * Три состояния: прошедшая приглушена, идущая залита цветом и показывает
+ * остаток времени, будущая — отсчёт до начала.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FavLessonLine(
-    hit: NextLessonLogic.Hit,
+private fun FavDayLine(
+    item: NextLessonLogic.DayLesson,
     now: Long,
+    /** Просьба прокрутить список к этой строке — только у идущей пары. */
+    goingRequester: BringIntoViewRequester? = null,
     onClick: () -> Unit,
 ) {
-    val start = hit.start
-    val teacher = hit.lesson.classInfo?.teacherFull?.takeIf { it.isNotBlank() }
-    val room = hit.lesson.room?.name?.takeIf { it.isNotBlank() }
-    val going = NextLessonLogic.isGoing(hit, now)
+    val going = item.state == NextLessonLogic.LessonState.GOING
+    val past = item.state == NextLessonLogic.LessonState.PAST
+    val teacher = item.lesson.classInfo?.teacherFull?.takeIf { it.isNotBlank() }
+    val room = item.lesson.room?.name?.takeIf { it.isNotBlank() }
 
-    val whenText = when {
-        going -> "сейчас"
-        start != null -> hmText(start)
-        else -> ""
-    }.trim()
-
-    val counter = if (going) "" else start?.let { counterText(it, now) }.orEmpty()
+    val whenText = if (going) "сейчас" else hmText(item.start)
+    // Идущая — сколько ещё идёт, прошедшая — что прошла, будущая — сколько
+    // ждать. Остаток считается только по времени сервера: у части аудиторий
+    // корпуса 8 конца пары нет, и придумывать его нельзя.
+    val counter = when {
+        going -> remainingText(item.end, now)
+        past -> "прошла"
+        else -> counterText(item.start, now)
+    }
 
     Column(
         Modifier
@@ -237,8 +314,8 @@ private fun FavLessonLine(
             // ИДУЩАЯ ПАРА ЗАЛИТА ЦВЕТОМ ТЕКУЩЕЙ.
             //
             // Тот же цвет, что у карточки идущей пары на экране расписания
-            // (NextLessonRow): одно значение в двух местах означает одно и то
-            // же — «идёт сейчас». Пользователь учится этому один раз.
+            // (NextLessonRow): одно значение в двух местах означает одно и
+            // то же — «идёт сейчас». Пользователь учится этому один раз.
             //
             // Цвет берётся из темы: в тёмной теме это тёмно-синий, потому что
             // светлая заливка на чёрном фоне слепит.
@@ -250,6 +327,7 @@ private fun FavLessonLine(
             .then(
                 if (going) Modifier.background(LocalAppColors.current.currentGroup) else Modifier
             )
+            .then(goingRequester?.let { Modifier.bringIntoViewRequester(it) } ?: Modifier)
             .clickable(onClick = onClick)
             .padding(vertical = 6.dp, horizontal = 4.dp),
     ) {
@@ -257,26 +335,27 @@ private fun FavLessonLine(
             Icon(
                 Icons.Filled.Schedule,
                 contentDescription = null,
-                tint = MIET_BLUE,
+                tint = if (past) LocalAppColors.current.muted else MIET_BLUE,
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     buildString {
-                        append(hit.lesson.classInfo?.name ?: "Пара")
-                        if (whenText.isNotEmpty()) {
-                            append(" • ")
-                            append(whenText)
-                        }
+                        append(item.lesson.classInfo?.name ?: "Пара")
+                        append(" • ")
+                        append(whenText)
                     },
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    // Прошедшая пара читается как история: тот же текст, но
+                    // приглушённый — её не надо искать глазами.
+                    color = if (past) LocalAppColors.current.muted
+                    else MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                 )
                 val details = buildString {
-                    val g = hit.lesson.group?.name
+                    val g = item.lesson.group?.name
                     if (!g.isNullOrBlank()) append(g)
                     if (room != null) {
                         if (isNotEmpty()) append("  •  ")
@@ -291,7 +370,9 @@ private fun FavLessonLine(
                     Text(
                         details,
                         fontSize = 12.sp,
-                        color = LocalAppColors.current.muted,
+                        color = LocalAppColors.current.muted.copy(
+                            alpha = if (past) 0.7f else 1f,
+                        ),
                         maxLines = 2,
                     )
                 }
@@ -302,7 +383,7 @@ private fun FavLessonLine(
                     counter,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MIET_BLUE,
+                    color = if (past) LocalAppColors.current.muted else MIET_BLUE,
                 )
             }
         }
@@ -341,13 +422,16 @@ internal data class FavLessons(
 /**
  * Готовые к отрисовке строки одного избранного.
  *
- * Раздельно от [FavLessons], потому что здесь уже только то, что рисуется:
- * пара без времени не показывается, а избранное без пары пропускается целиком.
+ * [today] — пары сегодняшнего дня по порядку. [nextTitle] и [next] — ближайший
+ * день с занятиями после сегодняшнего: он нужен, когда сегодняшний день уже
+ * закончился. Раньше здесь лежали только идущая и следующая пары, и всего дня
+ * человек не видел.
  */
 internal data class FavRows(
     val entry: FavEntry,
-    val going: NextLessonLogic.Hit?,
-    val upcoming: NextLessonLogic.Hit?,
+    val today: List<NextLessonLogic.DayLesson>,
+    val nextTitle: String?,
+    val next: List<NextLessonLogic.DayLesson>,
 )
 
 /** Подпись группы строк: чему принадлежит пара. */
@@ -355,6 +439,64 @@ internal fun favTitle(entry: FavEntry): String = when (entry.role) {
     Role.STUDENT -> entry.value
     Role.TEACHER -> entry.value
     Role.AUDIENCE -> "ауд. ${entry.value}"
+}
+
+/** Названия дней недели по индексу 0 = понедельник … 6 = воскресенье. */
+private val DAY_NAMES_RU = listOf(
+    "понедельник", "вторник", "среда", "четверг",
+    "пятница", "суббота", "воскресенье",
+)
+
+/**
+ * Ближайший день с занятиями после сегодняшнего.
+ *
+ * Нужен, когда пары на сегодня закончились: пустая плашка ничего не сообщает,
+ * а человек хочет знать, что у него дальше. Дни без занятий пропускаются —
+ * иначе в субботу блок показывал бы пустое воскресенье.
+ */
+internal fun nextDayWithLessons(
+    group: FavLessons,
+    now: Long,
+    maxDays: Int = 7,
+): Pair<String, List<NextLessonLogic.DayLesson>>? {
+    for (offset in 1..maxDays) {
+        val day = NextLessonLogic.dayLessons(group.lessons, group.times, now, offset)
+        if (day.isNotEmpty()) return nextDayTitle(now, offset) to day
+    }
+    return null
+}
+
+/** Подпись следующего дня: «Завтра, суббота 11.10» или «Понедельник 13.10». */
+internal fun nextDayTitle(now: Long, dayOffset: Int): String {
+    val cal = java.util.Calendar.getInstance().apply {
+        timeInMillis = now
+        add(java.util.Calendar.DAY_OF_MONTH, dayOffset)
+    }
+    val idx = dayIndexFromCalendar(cal.get(java.util.Calendar.DAY_OF_WEEK))
+    val name = DAY_NAMES_RU.getOrElse(idx) { "" }.replaceFirstChar { it.uppercase() }
+    val date = String.format(
+        java.util.Locale.US, "%02d.%02d",
+        cal.get(java.util.Calendar.DAY_OF_MONTH), cal.get(java.util.Calendar.MONTH) + 1,
+    )
+    return if (dayOffset == 1) "Завтра, $name $date" else "$name $date"
+}
+
+/**
+ * Остаток времени у идущей пары: «осталось 25 мин».
+ *
+ * Считается ТОЛЬКО по времени конца из данных сервера. У части аудиторий
+ * корпуса 8 конца пары нет — там остаток не показывается вовсе: подставлять
+ * «примерно 90 минут» и выдавать это за расписание нельзя.
+ */
+internal fun remainingText(end: Long?, now: Long): String {
+    if (end == null) return ""
+    val mins = ((end - now) / 60_000).toInt()
+    if (mins <= 0) return "заканчивается"
+    if (mins == 1) return "осталась 1 мин"
+    if (mins < 60) return "осталось $mins мин"
+    val hours = mins / 60
+    val rem = mins % 60
+    return if (rem == 0) "осталось $hours ч" else "осталось $hours ч $rem мин"
 }
 
 /**
