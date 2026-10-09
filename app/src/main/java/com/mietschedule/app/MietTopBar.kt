@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -98,10 +99,10 @@ private const val RESERVED_FOR_ACTIONS = 112
  * Вызывающий код переводит число в sp сам.
  */
 internal fun titleSizeSp(availableDp: Int): Float = when {
-    availableDp < 330 -> 14f
-    availableDp < 380 -> 16f
-    availableDp < 460 -> 17f
-    else -> 18f
+    availableDp < 330 -> 13f
+    availableDp < 380 -> 15f
+    availableDp < 460 -> 16f
+    else -> 17f
 }
 
 internal fun subtitleSizeSp(availableDp: Int): Float = when {
@@ -138,6 +139,15 @@ fun MietTopBar(
     homeSlotEmpty: Boolean = false,
 ) {
     TopAppBar(
+        // Высота шапки: 48dp — минимум Material для зоны нажатия.
+        //
+        // Параметр expandedHeight у самого TopAppBar, а НЕ Modifier.height():
+        // попытка задать высоту модификатором обрезала контент — заголовок в
+        // Column с fillMaxHeight выпадал за границу и становился невидимым.
+        // expandedHeight меняет высоту слота правильно, контент остаётся
+        // внутри. 48dp — нижний предел: меньше — и кнопки выпадают из зоны
+        // комфортного нажатия. Было 52dp, затем стандартные 64dp Material3.
+        expandedHeight = 48.dp,
         // Градиент вместо плоского цвета: шапка выглядит приподнятой
         // панелью, а не окрашенной полосой. TopAppBar сам не принимает
         // Brush, поэтому прозрачный контейнер + фон-градиент модификатором.

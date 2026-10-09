@@ -362,16 +362,19 @@ class ChipTopTest {
             "Ссылка должна звать открытие игры",
             home.contains("onClick = { onOpenChipGame?.invoke() }"),
         )
-        // Ссылка стоит после «О программе» — по просьбе владельца.
-        val aboutIdx = home.indexOf("""Text("О программе"""")
-        val gameIdx = home.indexOf("Text(GAME_TAGLINE")
-        assertTrue(
-            "Не найдены ссылки «О программе» и мини-игры",
-            aboutIdx > 0 && gameIdx > 0,
+        // «О программе» ушла в настройки, поэтому на главной игра теперь
+        // единственная текстовая ссылка внизу. Проверяем, что её больше
+        // ничего не окружает.
+        assertFalse(
+            "«О программе» не должна оставаться на главной — она в настройках",
+            home.contains("""Text("О программе""""),
         )
+        // Игра — последний элемент на главном экране.
+        val gameIdx = home.indexOf("Text(GAME_TAGLINE")
+        val addIdx = home.indexOf("onClick = onAdd")
         assertTrue(
-            "Мини-игра должна стоять после «О программе»",
-            aboutIdx < gameIdx,
+            "Мини-игра должна стоять после кнопки «Добавить»",
+            addIdx > 0 && gameIdx > addIdx,
         )
     }
 

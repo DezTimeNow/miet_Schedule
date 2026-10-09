@@ -20,24 +20,24 @@ class UiHelpersTest {
 
     @Test
     fun `узкий экран даёт мелкий заголовок`() {
-        assertEquals(14f, titleSizeSp(300), 0.01f)
+        assertEquals(13f, titleSizeSp(300), 0.01f)
     }
 
     @Test
     fun `средняя ширина даёт средний заголовок`() {
-        assertEquals(16f, titleSizeSp(340), 0.01f)
+        assertEquals(15f, titleSizeSp(340), 0.01f)
     }
 
     @Test
     fun `широкий экран даёт крупный заголовок`() {
-        assertEquals(18f, titleSizeSp(500), 0.01f)
+        assertEquals(17f, titleSizeSp(500), 0.01f)
     }
 
     @Test
     fun `на границе ширины заголовок не прыгает назад`() {
         // 330 — первая граница: ровно 330 уже относится к средней ветке.
-        assertEquals(14f, titleSizeSp(329), 0.01f)
-        assertEquals(16f, titleSizeSp(330), 0.01f)
+        assertEquals(13f, titleSizeSp(329), 0.01f)
+        assertEquals(15f, titleSizeSp(330), 0.01f)
     }
 
     @Test

@@ -789,6 +789,7 @@ fun AppRoot(
             onRefresh = { refreshCurrent() },
             onChangeRole = { goTo(Screen.HOME) },
             onThemeChange = onThemeChange,
+            onAbout = { goTo(Screen.ABOUT) },
             refreshing = refreshing,
         )
 

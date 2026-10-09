@@ -55,6 +55,8 @@ fun SettingsScreen(
     onRefresh: () -> Unit = {},
     onChangeRole: () -> Unit = {},
     onThemeChange: (Int) -> Unit = {},
+    /** Открыть экран «О программе». */
+    onAbout: () -> Unit = {},
     /**
      * Идёт ли общее обновление по ⭯.
      *
@@ -235,6 +237,41 @@ fun SettingsScreen(
                         )
                     }
                 }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            // ── О программе ──────────────────────────────────────────────
+            //
+            // Ссылка переехала сюда с главного экрана: раньше «О программе»
+            // была текстовой кнопкой внизу главной, рядом с «Мини-игой».
+            // Справка о приложении — это раздел настроек, а не то, за чем
+            // идут каждый день, поэтому ей место здесь, а не на главной.
+            //
+            // Без SectionTitle «О приложении»: кнопка «О программе» с
+            // подписью «Версия, обновления, сообщить об ошибке» говорит сама
+            // за себя, лишний заголовок над ней только занимает строку.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onAbout() }
+                    .padding(vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "О программе",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        "Версия, обновления, сообщить об ошибке",
+                        fontSize = 12.sp,
+                        color = LocalAppColors.current.muted,
+                    )
+                }
+                Text("›", fontSize = 20.sp, color = MIET_BLUE, fontWeight = FontWeight.Bold)
             }
 
             Spacer(Modifier.height(28.dp))

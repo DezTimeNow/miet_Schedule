@@ -174,15 +174,15 @@ class HomeLayoutTest {
         val blockIdx = body.indexOf("NextLessonCard(")
         val listIdx = body.indexOf("FAV_LIST_TITLE")
         val addIdx = body.indexOf("onClick = onAdd")
-        val aboutIdx = body.indexOf("onClick = onAbout")
+        val gameIdx = body.indexOf("onClick = { onOpenChipGame?.invoke() }")
         assertTrue("Не найден блок «сейчас и дальше»", blockIdx > 0)
         assertTrue("Не найден список избранного", listIdx > 0)
         assertTrue("Не найдена кнопка добавления", addIdx > 0)
-        assertTrue("Не найдена кнопка «О программе»", aboutIdx > 0)
+        assertTrue("Не найдена ссылка «Мини-игра»", gameIdx > 0)
         assertTrue(
-            "Порядок должен быть: блок, список, добавление, «О программе». " +
-                "На деле: блок=$blockIdx, список=$listIdx, добавление=$addIdx, опрограмме=$aboutIdx",
-            blockIdx < listIdx && listIdx < addIdx && addIdx < aboutIdx,
+            "Порядок должен быть: блок, список, добавление, мини-игра. " +
+                "На деле: блок=$blockIdx, список=$listIdx, добавление=$addIdx, игра=$gameIdx",
+            blockIdx < listIdx && listIdx < addIdx && addIdx < gameIdx,
         )
     }
 
@@ -233,17 +233,25 @@ class HomeLayoutTest {
      * раздел. Четыре вкладки в BottomNav выглядят как лишняя.
      */
     @Test
-    fun `о программе остаётся кнопкой а не вкладкой`() {
+    fun `о программе переехала в настройки`() {
         val home = code("HomeScreen.kt")
-        // В BottomNav только три вкладки — «О программе» среди них нет.
-        val nav = home.substringAfter("NavigationBar(").substringBefore(") { pad ->")
+        val settings = code("SettingsScreen.kt")
+        // «О программе» больше не на главной: она в настройках, раздел
+        // «О приложении». Справка о версии и обновлениях — настройки.
         assertFalse(
-            "«О программе» не должна быть вкладкой нижней навигации",
-            nav.contains("""Text("О программе")"""),
-        )
-        assertTrue(
-            "«О программе» остаётся отдельной кнопкой в конце экрана",
+            "«О программе» не должна оставаться на главной",
             home.contains("onClick = onAbout"),
+        )
+        // В настройках — ссылка на экран «О программе».
+        assertTrue(
+            "В настройках должна быть ссылка на «О программе»",
+            settings.contains("onAbout()"),
+        )
+        // Заголовок раздела «О приложении» убран: кнопка «О программе» с
+        // подписью говорит сама за себя.
+        assertFalse(
+            "Заголовок «О приложении» должен быть убран — кнопка самодостаточна",
+            settings.contains("SectionTitle(\"О приложении\")"),
         )
     }
 

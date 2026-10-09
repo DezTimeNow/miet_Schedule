@@ -287,16 +287,10 @@ fun HomeScreen(
 
             Spacer(Modifier.height(18.dp))
 
-            // «О программе» и «Мини-игра» — текстовые ссылки внизу экрана.
-            // Обе остались кнопками, а не вкладками BottomNav: это справка
-            // и развлечение, а не разделы навигации. Порядок: «О программе»,
-            // затем «Мини-игра» — справка важнее игры.
-            TextButton(
-                onClick = onAbout,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            ) {
-                Text("О программе", color = MIET_BLUE, style = MaterialTheme.typography.labelLarge)
-            }
+            // «Мини-игра» — единственная текстовая ссылка внизу главной.
+            // «О программе» переехала в «Настройки» (раздел «О приложении»):
+            // справка о версии и обновлениях — это настройки, а не то, за
+            // чем ходят каждый день. Остаётся только игра — развлечение.
             TextButton(
                 onClick = { onOpenChipGame?.invoke() },
                 enabled = onOpenChipGame != null,
@@ -615,6 +609,20 @@ fun FavoritesScreen(
                         FavEntryCard(entry) { onOpenFavorite(entry.role, entry.value) }
                     }
                     Spacer(Modifier.height(8.dp))
+                }
+                // Кнопка «Добавить» — тот же вход в выбор, что и на главной.
+                // Чтобы добавлять новое избранное прямо с этой вкладки, не
+                // возвращаясь на главную.
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = onAdd,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MIET_BLUE),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Добавить", style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
