@@ -13,7 +13,8 @@
 <a href="https://github.com/DezTimeNow/miet_Schedule/releases/latest"><img src="https://img.shields.io/badge/⬇_СКАЧАТЬ_APK-2ea44f?style=for-the-badge&logo=android&logoColor=white" alt="Скачать APK" height="44"></a>
 
 <br>
-<sub>Последняя версия <b>0.80</b> · ~14 МБ · нужен Android 7.0+</sub>
+<a href="https://github.com/DezTimeNow/miet_Schedule/releases/latest"><img src="https://img.shields.io/github/v/release/DezTimeNow/miet_Schedule?color=blue" alt="Версия"></a>
+<sub>· ~14 МБ · нужен Android 7.0+</sub>
 
 <br>
 <br>
